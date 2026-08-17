@@ -1,0 +1,714 @@
+/*
+
+Script: Groovy script to execute a master calculation for calculating workforce costs by employee and position
+
+*/
+
+def DatatoPrint_SP = new ArrayList<String>()
+def DatatoPrint_Trans = new ArrayList<String>()
+def DatatoPrint_PI = new ArrayList<String>()
+
+
+def PPMonth, businessDayCount,count, ScenarioName, YearName
+double biweeklysal,salmax,biweeklysalPI
+
+
+def startDateStr = new Date().parse('MM/dd/yyyy', '04/06/2025')
+def endDateStr = new Date().parse('MM/dd/yyyy', '04/19/2025')
+def formatteddate = new Date().parse('MM/dd/yyyy', '04/19/2025')
+def calcdate = new Date().parse('MM/dd/yyyy', '04/19/2025')
+def PIDate1 = new Date().parse('MM/dd/yyyy', '04/19/2025')
+def PIDate2 = new Date().parse('MM/dd/yyyy', '04/19/2025')
+def PIFlag
+
+Cube cube = operation.application.getCube("WFPLAN")
+def BudYear = cube.getSubstitutionVariableValue('BudYear')
+def CurrYear = cube.getSubstitutionVariableValue('CurrYear')
+
+Dimension Emp = operation.application.getDimension("Employees")
+
+Dimension PerDim = operation.application.getDimension("Period",cube)
+
+/*Get the list of pay periods that are Open*/
+List<String> ppRList = PerDim.getEvaluatedMembers('RSiblings("&PriorPP")',cube)*.name
+println ppRList
+
+/*Get the list of pay periods that are Closed*/
+List<String> ppLList = PerDim.getEvaluatedMembers('ILSiblings("&PriorPP")',cube)*.name
+println ppLList
+
+def EmpList = Emp.getEvaluatedMembers(/@Remove(@Relative(Total_Employees,0),Dept_Level_Entries)/,cube)
+
+def DepttList = operation.application.getDimension("Departments",cube).getEvaluatedMembers('ILvl0Descendants(RC_33A00)',cube)
+
+/*Get the Sceario and Year from the data form*/
+operation.grid.dataCellIterator.each { DataCell cell ->
+
+    ScenarioName = cell.getScenarioName()
+    YearName = cell.getYearName()
+}
+println ScenarioName
+println YearName
+println CurrYear
+println BudYear
+
+if(ScenarioName.equals('Working_Budget') && YearName.equals(BudYear.replace('"','')))
+{
+    FlexibleDataGridDefinitionBuilder builder = cube.flexibleDataGridDefinitionBuilder()
+
+    builder.setPov('No_Scenario','No_Client','No_Employee','No_Version','No_Department','No_Positions',BudYear)
+    builder.addRow('ILvl0Descendants(Pay_Period_Total)')
+    builder.addColumn('Working_Days','PP_Start_Date','PP_End_Date','PP_Month',)
+
+    cube.loadGrid(builder.build(), false).withCloseable { grid ->
+        grid.dataCellIterator('PP_Start_Date').each{ it ->
+            DatatoPrint_Trans.add(it.getDataAsDate().format("MM/dd/yyyy")+','+it.crossDimCell('PP_End_Date').getDataAsDate().format("MM/dd/yyyy")+','+it.getPeriodName()+','+it.crossDimCell('PP_Month').getData()+','+it.crossDimCell('Working_Days').getData())
+        }
+    }
+
+    FlexibleDataGridDefinitionBuilder builder2 = cube.flexibleDataGridDefinitionBuilder()
+    builder2.setSuppressMissingRows(true)
+    builder2.setSuppressMissingBlocks(true)
+    builder2.setPov('Working_Budget','No_Employee','Draft','No_Positions',BudYear,'BegBalance')
+    builder2.addRow('ILvl0Descendants(Salary_Plan_Types)','ILvl0Descendants(Salary_Grades)')
+    builder2.addColumn('Salary_Max','ILvl0Descendants(Salary_Steps)')
+
+    cube.loadGrid(builder2.build(), false).withCloseable { grid ->
+        grid.dataCellIterator('Salary_Max').each{ it ->
+            DatatoPrint_SP.add(it.getData()+','+it.crossDimCell('Step_1').getData()+','+it.crossDimCell('Step_2').getData()+','+it.crossDimCell('Step_3').getData()+','+it.crossDimCell('Step_4').getData()+','+it.crossDimCell('Step_5').getData()+','+it.crossDimCell('Step_6').getData()+','+it.crossDimCell('Step_7').getData()+','+it.crossDimCell('Step_8').getData()+','+it.crossDimCell('Step_9').getData()+','+it.crossDimCell('Step_10').getData()+','+it.crossDimCell('Step_11').getData()+','+it.getMemberName("Departments")+','+it.getMemberName("Client"))
+        }
+    }
+
+/*Get the Planned Salary Increase Rates if applicable*/
+
+    FlexibleDataGridDefinitionBuilder builder20 = cube.flexibleDataGridDefinitionBuilder()
+    builder20.setSuppressMissingRows(true)
+    builder20.setSuppressMissingBlocks(true)
+    builder20.setPov('Working_Budget','No_Employee','Draft','No_Positions',BudYear,'BegBalance')
+    builder20.addRow('ILvl0Descendants(Salary_Plan_Types)','ILvl0Descendants(Total_Client)')
+    builder20.addColumn('ATB_Increase_Rate1','ATB_Effective_Period1','ATB_Increase_Rate2','ATB_Effective_Period2')
+
+    cube.loadGrid(builder20.build(), false).withCloseable { grid20 ->
+        grid20.dataCellIterator('ATB_Increase_Rate1').each{ it ->
+
+            if(!it.crossDimCell('ATB_Effective_Period1').missing && !it.crossDimCell('ATB_Effective_Period2').missing)
+            {
+                DatatoPrint_PI.add(it.getData()+','+it.crossDimCell('ATB_Effective_Period1').getDataAsDate().format("MM/dd/yyyy")+','+it.crossDimCell('ATB_Increase_Rate2').getData()+','+it.crossDimCell('ATB_Effective_Period2').getDataAsDate().format("MM/dd/yyyy")+','+it.getMemberName("Departments")+','+it.getMemberName("Client"))
+            }
+            else if(!it.crossDimCell('ATB_Effective_Period1').missing && it.crossDimCell('ATB_Effective_Period2').missing)
+            {
+                DatatoPrint_PI.add(it.getData()+','+it.crossDimCell('ATB_Effective_Period1').getDataAsDate().format("MM/dd/yyyy")+','+it.crossDimCell('ATB_Increase_Rate2').getData()+','+''+','+it.getMemberName("Departments")+','+it.getMemberName("Client"))
+            }
+            else if(it.crossDimCell('ATB_Effective_Period1').missing && !it.crossDimCell('ATB_Effective_Period2').missing)
+            {
+                DatatoPrint_PI.add(it.getData()+','+''+','+it.crossDimCell('ATB_Increase_Rate2').getData()+','+it.crossDimCell('ATB_Effective_Period2').getDataAsDate().format("MM/dd/yyyy")+','+it.getMemberName("Departments")+','+it.getMemberName("Client"))
+            }
+        }
+
+    }
+    println DatatoPrint_PI
+
+/*Recalculate Bi-Weekly gross based on the planned salary increase*/
+
+    DepttList.each{ deptmem ->
+        if(DatatoPrint_PI)
+        {
+            FlexibleDataGridDefinitionBuilder builder21 = cube.flexibleDataGridDefinitionBuilder()
+
+            builder21.setSuppressMissingRows(true)
+            builder21.setSuppressMissingBlocks(true)
+            builder21.setPov('Working_Budget','Draft',BudYear)
+            builder21.addColumn('ILvl0Descendants(Pay_Period_Total)','BegBalance','Bi-Weekly_Salary','Working_Days','ST_5001','Increment_Date','Step','Grade','Salary_Plan','IncreSalValue','FTE')
+            builder21.addRow('ILvl0Descendants(Total_Client)',EmpList,'ILvl0Descendants(Existing_Positions)','ILvl0Descendants(New_Positions)',deptmem)
+
+            cube.loadGrid(builder21.build(), false).withCloseable { grid21 ->
+                grid21.dataCellIterator('Bi-Weekly_Salary').each{ it ->
+                    DatatoPrint_Trans.each{transrows ->
+                        startDateStr = new Date().parse('MM/dd/yyyy', transrows.split(',')[0])
+                        endDateStr = new Date().parse('MM/dd/yyyy', transrows.split(',')[1])
+                        PIFlag = 'No Increase'
+                        def varPPID = transrows.split(',')[2]
+                        if(it.getPeriodName().equals('BegBalance'))
+                        {
+                            if(!it.crossDimCell('Salary_Plan').isMissing() && !it.crossDimCell('Grade').isMissing())
+                            {
+                                DatatoPrint_PI.each{ pirows ->
+                                    if(it.crossDimCell('Salary_Plan').getDataAsSmartListMemberName().equals(pirows.split(',')[4]) && it.getMemberName("Client").equals(pirows.split(',')[5]))
+                                    {
+                                        if(!it.crossDimCell('Working_Days',varPPID).isMissing())
+                                        {
+                                            println "I am planned increases logic"
+                                            if(pirows.split(',')[1])
+                                            {
+                                                PIDate1 = new Date().parse('MM/dd/yyyy', pirows.split(',')[1])
+                                                if(PIDate1 > startDateStr && PIDate1 < endDateStr)
+                                                {
+                                                    calcdate =  PIDate1
+                                                    businessDayCount = 0
+                                                    while(calcdate <= endDateStr)
+                                                    {
+                                                        if (calcdate.getDay() != 0 && calcdate.getDay() != 6)
+                                                        { // 0 for Sunday, 6 for Saturday in Groovy's Calendar
+                                                            businessDayCount++
+                                                        }
+                                                        calcdate= calcdate.plus(1)
+                                                    }
+                                                    if(it.crossDimCell('IncreSalValue',varPPID).isMissing())
+                                                    {
+                                                        biweeklysalPI = ((((it.crossDimCell('Working_Days',varPPID).Data - businessDayCount)/10) * it.Data) + ((businessDayCount/10) * it.Data * (1+pirows.split(',')[0].toDouble()))) * it.crossDimCell('FTE').getData()
+                                                    }
+                                                    else
+                                                    {
+                                                        biweeklysalPI = ((((it.crossDimCell('Working_Days',varPPID).Data - businessDayCount)/10) * it.crossDimCell('IncreSalValue',varPPID).Data) + ((businessDayCount/10) * it.crossDimCell('IncreSalValue',varPPID).Data * (1+pirows.split(',')[0].toDouble()))) * it.crossDimCell('FTE').getData()
+                                                    }
+
+                                                    it.crossDimCell('ST_5001',varPPID).Data = biweeklysalPI.toDouble()
+                                                    PIFlag = 'Increase'
+                                                }
+                                                else  if(PIDate1 <= startDateStr)
+                                                {
+                                                    if(it.crossDimCell('IncreSalValue',varPPID).isMissing())
+                                                    {
+                                                        biweeklysalPI = ((it.crossDimCell('Working_Days',varPPID).Data/10) * it.Data * (1+pirows.split(',')[0].toDouble())) * it.crossDimCell('FTE').getData()
+                                                    }
+                                                    else
+                                                    {
+                                                        biweeklysalPI = ((it.crossDimCell('Working_Days',varPPID).Data/10) * it.crossDimCell('IncreSalValue',varPPID).Data * (1+pirows.split(',')[0].toDouble())) * it.crossDimCell('FTE').getData()
+                                                    }
+                                                    it.crossDimCell('ST_5001',varPPID).Data = biweeklysalPI.toDouble()
+                                                    PIFlag = 'Increase'
+                                                }
+                                                else  if(PIDate1 > endDateStr && !PIFlag.equals('Increase'))
+                                                {
+                                                    if(!it.crossDimCell('Working_Days',varPPID).isMissing())
+                                                    {
+                                                        println "I am not in planned increases logic 2 "+varPPID+" "+it.crossDimCell('Salary_Plan').getDataAsSmartListMemberName()
+                                                        if(it.crossDimCell('IncreSalValue',varPPID).isMissing())
+                                                        {
+                                                            it.crossDimCell('ST_5001',varPPID).Data = (it.crossDimCell('Working_Days',varPPID).Data/10) * it.Data * it.crossDimCell('FTE',varPPID).getData()
+                                                        }
+                                                        else
+                                                        {
+                                                            it.crossDimCell('ST_5001',varPPID).Data = (it.crossDimCell('Working_Days',varPPID).Data/10) * it.crossDimCell('IncreSalValue',varPPID).Data * it.crossDimCell('FTE',varPPID).getData()
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            if(pirows.split(',')[3])
+                                            {
+                                                PIDate2 = new Date().parse('MM/dd/yyyy', pirows.split(',')[3])
+                                                if(PIDate2 > startDateStr && PIDate2 < endDateStr)
+                                                {
+                                                    calcdate =  PIDate2
+                                                    businessDayCount = 0
+                                                    while(calcdate <= endDateStr)
+                                                    {
+                                                        if (calcdate.getDay() != 0 && calcdate.getDay() != 6)
+                                                        { // 0 for Sunday, 6 for Saturday in Groovy's Calendar
+                                                            businessDayCount++
+                                                        }
+                                                        calcdate= calcdate.plus(1)
+                                                    }
+                                                    if(biweeklysalPI)
+                                                    {
+                                                        if(it.crossDimCell('IncreSalValue',varPPID).isMissing())
+                                                        {
+                                                            biweeklysalPI = ((((it.crossDimCell('Working_Days',varPPID).Data - businessDayCount)/10) * it.Data * (1+pirows.split(',')[0].toDouble())) + ((businessDayCount/10) * it.Data * (1+pirows.split(',')[0].toDouble()) * (1+pirows.split(',')[2].toDouble()) )) * it.crossDimCell('FTE').getData()
+                                                            /*(((it.crossDimCell('Working_Days',varPPID).Data - businessDayCount)/10) *  biweeklysalPI.toDouble()) + ((businessDayCount/10) * biweeklysalPI.toDouble() * (1+pirows.split(',')[2].toDouble()))*/
+                                                        }
+                                                        else
+                                                        {
+                                                            biweeklysalPI = ((((it.crossDimCell('Working_Days',varPPID).Data - businessDayCount)/10) * it.crossDimCell('IncreSalValue',varPPID).Data * (1+pirows.split(',')[0].toDouble())) + ((businessDayCount/10) * it.crossDimCell('IncreSalValue',varPPID).Data * (1+pirows.split(',')[0].toDouble()) * (1+pirows.split(',')[2].toDouble()) )) * it.crossDimCell('FTE').getData()
+                                                        }
+                                                    }
+                                                    else
+                                                    {
+                                                        if(it.crossDimCell('IncreSalValue',varPPID).isMissing())
+                                                        {
+                                                            biweeklysalPI = ((((it.crossDimCell('Working_Days',varPPID).Data - businessDayCount)/10) * it.Data) + ((businessDayCount/10) * it.Data * (1+pirows.split(',')[2].toDouble()))) * it.crossDimCell('FTE').getData()
+                                                        }
+                                                        else
+                                                        {
+                                                            biweeklysalPI = ((((it.crossDimCell('Working_Days',varPPID).Data - businessDayCount)/10) * it.crossDimCell('IncreSalValue',varPPID).Data) + ((businessDayCount/10) * it.crossDimCell('IncreSalValue',varPPID).Data * (1+pirows.split(',')[2].toDouble()))) * it.crossDimCell('FTE').getData()
+                                                        }
+                                                    }
+                                                    it.crossDimCell('ST_5001',varPPID).Data = biweeklysalPI.toDouble()
+                                                    PIFlag = 'Increase'
+                                                }
+                                                else  if(PIDate2 <= startDateStr)
+                                                {
+                                                    if(biweeklysalPI)
+                                                    {
+                                                        if(it.crossDimCell('IncreSalValue',varPPID).isMissing())
+                                                        {
+                                                            biweeklysalPI =  ((it.crossDimCell('Working_Days',varPPID).Data/10) * it.Data * (1+pirows.split(',')[0].toDouble()) * (1+pirows.split(',')[2].toDouble()) ) * it.crossDimCell('FTE').getData()
+                                                            /*( biweeklysalPI.toDouble() * (1+pirows.split(',')[2].toDouble())) */
+                                                        }
+                                                        else
+                                                        {
+                                                            biweeklysalPI =  ((it.crossDimCell('Working_Days',varPPID).Data/10) * it.crossDimCell('IncreSalValue',varPPID).Data * (1+pirows.split(',')[0].toDouble()) * (1+pirows.split(',')[2].toDouble()) ) * it.crossDimCell('FTE').getData()
+                                                        }
+                                                    }
+                                                    else
+                                                    {
+                                                        if(it.crossDimCell('IncreSalValue',varPPID).isMissing())
+                                                        {
+                                                            biweeklysalPI = (((it.crossDimCell('Working_Days',varPPID).Data/10) * it.Data * (1+pirows.split(',')[2].toDouble()))) * it.crossDimCell('FTE').getData()
+                                                        }
+                                                        else
+                                                        {
+                                                            biweeklysalPI = (((it.crossDimCell('Working_Days',varPPID).Data/10) * it.crossDimCell('IncreSalValue',varPPID).Data * (1+pirows.split(',')[2].toDouble()))) * it.crossDimCell('FTE').getData()
+                                                        }
+                                                    }
+                                                    it.crossDimCell('ST_5001',varPPID).Data = biweeklysalPI.toDouble()
+                                                    PIFlag = 'Increase'
+                                                }
+                                                else  if(PIDate2 > endDateStr && !PIFlag.equals('Increase'))
+                                                {
+                                                    if(!it.crossDimCell('Working_Days',varPPID).isMissing())
+                                                    {
+                                                        println "I am not in planned increases logic 3 "+varPPID+" "+it.crossDimCell('Salary_Plan').getDataAsSmartListMemberName()
+                                                        if(it.crossDimCell('IncreSalValue',varPPID).isMissing())
+                                                        {
+                                                            it.crossDimCell('ST_5001',varPPID).Data = (it.crossDimCell('Working_Days',varPPID).Data/10) * it.Data * it.crossDimCell('FTE',varPPID).getData()
+                                                        }
+                                                        else
+                                                        {
+                                                            it.crossDimCell('ST_5001',varPPID).Data = (it.crossDimCell('Working_Days',varPPID).Data/10) * it.crossDimCell('IncreSalValue',varPPID).Data * it.crossDimCell('FTE',varPPID).getData()
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }/*If for checking Salary Plan closes here*/
+                                    else
+                                    {
+                                        if(!it.crossDimCell('Working_Days',varPPID).isMissing()  && !PIFlag.equals('Increase'))
+                                        {
+                                            println "I am not in planned increases logic 4 "+varPPID
+                                            if(it.crossDimCell('IncreSalValue',varPPID).isMissing())
+                                            {
+                                                it.crossDimCell('ST_5001',varPPID).Data = (it.crossDimCell('Working_Days',varPPID).Data/10) * it.Data * it.crossDimCell('FTE',varPPID).getData()
+                                            }
+                                            else
+                                            {
+                                                it.crossDimCell('ST_5001',varPPID).Data = (it.crossDimCell('Working_Days',varPPID).Data/10) * it.crossDimCell('IncreSalValue',varPPID).Data * it.crossDimCell('FTE',varPPID).getData()
+                                            }
+                                        }
+                                    }/*Else for Salary Plan Check Closes here*/
+                                }
+                            }
+                        }
+                    }
+                }
+                cube.saveGrid(grid21)
+            }
+        } /*IF Closed*/
+        else
+        {
+            FlexibleDataGridDefinitionBuilder builder22 = cube.flexibleDataGridDefinitionBuilder()
+
+			builder22.setSuppressMissingRows(true)
+            builder22.setSuppressMissingBlocks(true)
+            builder22.setPov('Working_Budget','Draft',BudYear)
+            builder22.addColumn('ILvl0Descendants(Pay_Period_Total)','BegBalance','Bi-Weekly_Salary','Working_Days','ST_5001','Increment_Date','Step','Grade','Salary_Plan','IncreSalValue','FTE')
+            builder22.addRow('ILvl0Descendants(Total_Client)',EmpList,'ILvl0Descendants(Existing_Positions)','ILvl0Descendants(New_Positions)',deptmem)
+
+            cube.loadGrid(builder22.build(), false).withCloseable { grid22 ->
+                grid22.dataCellIterator('Bi-Weekly_Salary').each{ it ->
+                    DatatoPrint_Trans.each{transrows ->
+                        startDateStr = new Date().parse('MM/dd/yyyy', transrows.split(',')[0])
+                        endDateStr = new Date().parse('MM/dd/yyyy', transrows.split(',')[1])
+                        def varPPID = transrows.split(',')[2]
+                        if(it.getPeriodName().equals('BegBalance'))
+                        {
+                            if(!it.crossDimCell('Working_Days',varPPID).isMissing())
+                            {
+                                println "I am in removing planned increases logic"
+                                if(it.crossDimCell('IncreSalValue',varPPID).isMissing())
+                                {
+                                    it.crossDimCell('ST_5001',varPPID).Data = (it.crossDimCell('Working_Days',varPPID).Data/10) * it.Data * it.crossDimCell('FTE').getData()
+                                }
+                                else
+                                {
+                                    it.crossDimCell('ST_5001',varPPID).Data = (it.crossDimCell('Working_Days',varPPID).Data/10) * it.crossDimCell('IncreSalValue',varPPID).Data * it.crossDimCell('FTE').getData()
+                                }
+                            }
+                        }
+                    }
+                }
+                cube.saveGrid(grid22)
+            }
+        }
+    }
+
+	String calcScript =
+            """
+     SET UPDATECALC OFF;
+     SET EMPTYMEMBERSETS ON;
+
+     FIX(&BudYear,"Working_Budget","Draft",@Relative("Pay_Period_Total",0),@Relative("Total_Client",0),@Remove(@Relative("Total_Employees",0),"Dept_Level_Entries"),@Relative("Existing_Positions",0),@Relative("New_Positions",0),@Relative("RC_33A00",0))
+      "FTE"
+      (
+        IF("FTE" != #Missing)
+
+            IF("Employee_Category"->"BegBalance" == [[SL_Employee_Category.L]] OR "Employee_Category"->"BegBalance" == [[SL_Employee_Category.K]])
+
+            "ST_5001" = "ST_5001" * (1+"No_Client"->"No_Department"->"No_Positions"->"No_Employee"->"LStatus_Vacation_Rate"->"BegBalance");
+
+            ENDIF
+
+            IF("Employee_Category"->"BegBalance" == [[SL_Employee_Category.L]] /*OR "Employee_Category"->"BegBalance" == [[SL_Employee_Category.M]] OR "Employee_Category"->"BegBalance" == [[SL_Employee_Category.K]]*/)
+
+
+            "ST_5121" = "No_Client"->"No_Department"->"No_Positions"->"No_Employee"->"Health_and_Welfare_Amount"->"BegBalance" * ("Working_Days"/10) * "FTE";
+            ELSE
+
+             "ST_5121" = #Missing;
+
+            ENDIF
+            "ST_5294" = ("ST_5001"+"ST_5010"+"ST_5020") * "No_Client"->"No_Department"->"No_Positions"->"No_Employee"->"Benefits_Chargeback_Rate"->"BegBalance";
+        ENDIF
+
+      )
+     ENDFIX
+    """
+
+
+    println calcScript
+    return calcScript.toString()
+
+}
+else if(ScenarioName.equals('Cur_Forecast') && YearName.equals(CurrYear.replace('"','')))
+{
+    FlexibleDataGridDefinitionBuilder builder = cube.flexibleDataGridDefinitionBuilder()
+
+    builder.setPov('No_Scenario','No_Client','No_Employee','No_Version','No_Department','No_Positions',CurrYear)
+    builder.addRow('ILvl0Descendants(Pay_Period_Total)')
+    builder.addColumn('Working_Days','PP_Start_Date','PP_End_Date','PP_Month',)
+
+    cube.loadGrid(builder.build(), false).withCloseable { grid ->
+        grid.dataCellIterator('PP_Start_Date').each{ it ->
+            DatatoPrint_Trans.add(it.getDataAsDate().format("MM/dd/yyyy")+','+it.crossDimCell('PP_End_Date').getDataAsDate().format("MM/dd/yyyy")+','+it.getPeriodName()+','+it.crossDimCell('PP_Month').getData()+','+it.crossDimCell('Working_Days').getData())
+        }
+    }
+
+	FlexibleDataGridDefinitionBuilder builder2 = cube.flexibleDataGridDefinitionBuilder()
+    builder2.setSuppressMissingRows(true)
+    builder2.setSuppressMissingBlocks(true)
+    builder2.setPov('Cur_Forecast','No_Employee','Draft','No_Positions',CurrYear,'BegBalance')
+    builder2.addRow('ILvl0Descendants(Salary_Plan_Types)','ILvl0Descendants(Salary_Grades)')
+    builder2.addColumn('Salary_Max','ILvl0Descendants(Salary_Steps)')
+
+    cube.loadGrid(builder2.build(), false).withCloseable { grid ->
+        grid.dataCellIterator('Salary_Max').each{ it ->
+            DatatoPrint_SP.add(it.getData()+','+it.crossDimCell('Step_1').getData()+','+it.crossDimCell('Step_2').getData()+','+it.crossDimCell('Step_3').getData()+','+it.crossDimCell('Step_4').getData()+','+it.crossDimCell('Step_5').getData()+','+it.crossDimCell('Step_6').getData()+','+it.crossDimCell('Step_7').getData()+','+it.crossDimCell('Step_8').getData()+','+it.crossDimCell('Step_9').getData()+','+it.crossDimCell('Step_10').getData()+','+it.crossDimCell('Step_11').getData()+','+it.getMemberName("Departments")+','+it.getMemberName("Client"))
+        }
+    }
+
+/*Get the Planned Salary Increase Rates if applicable*/
+
+    FlexibleDataGridDefinitionBuilder builder20 = cube.flexibleDataGridDefinitionBuilder()
+    builder20.setSuppressMissingRows(true)
+    builder20.setSuppressMissingBlocks(true)
+    builder20.setPov('Cur_Forecast','No_Employee','Draft','No_Positions',CurrYear,'BegBalance')
+    builder20.addRow('ILvl0Descendants(Salary_Plan_Types)','ILvl0Descendants(Total_Client)')
+    builder20.addColumn('ATB_Increase_Rate1','ATB_Effective_Period1','ATB_Increase_Rate2','ATB_Effective_Period2')
+
+    cube.loadGrid(builder20.build(), false).withCloseable { grid20 ->
+        grid20.dataCellIterator('ATB_Increase_Rate1').each{ it ->
+
+            if(!it.crossDimCell('ATB_Effective_Period1').missing && !it.crossDimCell('ATB_Effective_Period2').missing)
+            {
+                DatatoPrint_PI.add(it.getData()+','+it.crossDimCell('ATB_Effective_Period1').getDataAsDate().format("MM/dd/yyyy")+','+it.crossDimCell('ATB_Increase_Rate2').getData()+','+it.crossDimCell('ATB_Effective_Period2').getDataAsDate().format("MM/dd/yyyy")+','+it.getMemberName("Departments")+','+it.getMemberName("Client"))
+            }
+            else if(!it.crossDimCell('ATB_Effective_Period1').missing && it.crossDimCell('ATB_Effective_Period2').missing)
+            {
+                DatatoPrint_PI.add(it.getData()+','+it.crossDimCell('ATB_Effective_Period1').getDataAsDate().format("MM/dd/yyyy")+','+it.crossDimCell('ATB_Increase_Rate2').getData()+','+''+','+it.getMemberName("Departments")+','+it.getMemberName("Client"))
+            }
+            else if(it.crossDimCell('ATB_Effective_Period1').missing && !it.crossDimCell('ATB_Effective_Period2').missing)
+            {
+                DatatoPrint_PI.add(it.getData()+','+''+','+it.crossDimCell('ATB_Increase_Rate2').getData()+','+it.crossDimCell('ATB_Effective_Period2').getDataAsDate().format("MM/dd/yyyy")+','+it.getMemberName("Departments")+','+it.getMemberName("Client"))
+            }
+        }
+    }
+
+    println DatatoPrint_PI
+
+	/*Recalculate Bi-Weekly gross based on the planned salary increase*/
+
+    DepttList.each{ deptmem ->
+        if(DatatoPrint_PI)
+        {
+            println "I am planned increases logic"
+
+			FlexibleDataGridDefinitionBuilder builder21 = cube.flexibleDataGridDefinitionBuilder()
+            
+            builder21.setSuppressMissingRows(true)
+            builder21.setSuppressMissingBlocks(true)
+            builder21.setPov('Cur_Forecast','Draft',CurrYear)
+            builder21.addColumn(ppRList,'BegBalance','Bi-Weekly_Salary','Working_Days','ST_5001','Increment_Date','Step','Grade','Salary_Plan','IncreSalValue','FTE')
+            builder21.addRow('ILvl0Descendants(Total_Client)',EmpList,'ILvl0Descendants(Existing_Positions)','ILvl0Descendants(New_Positions)',deptmem)
+
+            cube.loadGrid(builder21.build(), false).withCloseable { grid21 ->
+                grid21.dataCellIterator('Bi-Weekly_Salary').each{ it ->
+                    DatatoPrint_Trans.each{transrows ->
+                        startDateStr = new Date().parse('MM/dd/yyyy', transrows.split(',')[0])
+                        endDateStr = new Date().parse('MM/dd/yyyy', transrows.split(',')[1])
+                        PIFlag = 'No Increase'
+                        def varPPID = transrows.split(',')[2]
+                        if(ppRList.contains(varPPID))
+                        {
+                            if(it.getPeriodName().equals('BegBalance'))
+                            {
+                                if(!it.crossDimCell('Salary_Plan').isMissing() && !it.crossDimCell('Grade').isMissing())
+                                {
+                                    DatatoPrint_PI.each{ pirows ->
+                                        if(it.crossDimCell('Salary_Plan').getDataAsSmartListMemberName().equals(pirows.split(',')[4]) && it.getMemberName("Client").equals(pirows.split(',')[5]))
+                                        {
+                                            if(!it.crossDimCell('Working_Days',varPPID).isMissing())
+                                            {
+                                                if(pirows.split(',')[1])
+                                                {
+                                                    PIDate1 = new Date().parse('MM/dd/yyyy', pirows.split(',')[1])
+                                                    if(PIDate1 > startDateStr && PIDate1 < endDateStr)
+                                                    {
+                                                        calcdate =  PIDate1
+                                                        businessDayCount = 0
+                                                        while(calcdate <= endDateStr)
+                                                        {
+                                                            if (calcdate.getDay() != 0 && calcdate.getDay() != 6)
+                                                            { // 0 for Sunday, 6 for Saturday in Groovy's Calendar
+                                                                businessDayCount++
+                                                            }
+                                                            calcdate= calcdate.plus(1)
+                                                        }
+                                                        if(it.crossDimCell('IncreSalValue',varPPID).isMissing())
+                                                        {
+                                                            biweeklysalPI = ((((it.crossDimCell('Working_Days',varPPID).Data - businessDayCount)/10) * it.Data) + ((businessDayCount/10) * it.Data * (1+pirows.split(',')[0].toDouble()))) * it.crossDimCell('FTE').getData()
+                                                        }
+                                                        else
+                                                        {
+                                                            biweeklysalPI = ((((it.crossDimCell('Working_Days',varPPID).Data - businessDayCount)/10) * it.crossDimCell('IncreSalValue',varPPID).Data) + ((businessDayCount/10) * it.crossDimCell('IncreSalValue',varPPID).Data * (1+pirows.split(',')[0].toDouble()))) * it.crossDimCell('FTE').getData()
+                                                        }
+
+                                                        it.crossDimCell('ST_5001',varPPID).Data = biweeklysalPI.toDouble()
+                                                        PIFlag = 'Increase'
+                                                    }
+                                                    else  if(PIDate1 <= startDateStr)
+                                                    {
+                                                        if(it.crossDimCell('IncreSalValue',varPPID).isMissing())
+                                                        {
+                                                            biweeklysalPI = ((it.crossDimCell('Working_Days',varPPID).Data/10) * it.Data * (1+pirows.split(',')[0].toDouble())) * it.crossDimCell('FTE').getData()
+                                                        }
+                                                        else
+                                                        {
+                                                            biweeklysalPI = ((it.crossDimCell('Working_Days',varPPID).Data/10) * it.crossDimCell('IncreSalValue',varPPID).Data * (1+pirows.split(',')[0].toDouble())) * it.crossDimCell('FTE').getData()
+                                                        }
+                                                        it.crossDimCell('ST_5001',varPPID).Data = biweeklysalPI.toDouble()
+                                                        PIFlag = 'Increase'
+                                                    }
+                                                    else  if(PIDate1 > endDateStr && !PIFlag.equals('Increase'))
+                                                    {
+                                                        if(!it.crossDimCell('Working_Days',varPPID).isMissing())
+                                                        {
+                                                            println "I am not in planned increases logic 2 "+varPPID+" "+it.crossDimCell('Salary_Plan').getDataAsSmartListMemberName()
+                                                            if(it.crossDimCell('IncreSalValue',varPPID).isMissing())
+                                                            {
+                                                                it.crossDimCell('ST_5001',varPPID).Data = (it.crossDimCell('Working_Days',varPPID).Data/10) * it.Data * it.crossDimCell('FTE',varPPID).getData()
+                                                            }
+                                                            else
+                                                            {
+                                                                it.crossDimCell('ST_5001',varPPID).Data = (it.crossDimCell('Working_Days',varPPID).Data/10) * it.crossDimCell('IncreSalValue',varPPID).Data * it.crossDimCell('FTE',varPPID).getData()
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                                if(pirows.split(',')[3])
+                                                {
+                                                    PIDate2 = new Date().parse('MM/dd/yyyy', pirows.split(',')[3])
+                                                    if(PIDate2 > startDateStr && PIDate2 < endDateStr)
+                                                    {
+                                                        calcdate =  PIDate2
+                                                        businessDayCount = 0
+                                                        while(calcdate <= endDateStr)
+                                                        {
+                                                            if (calcdate.getDay() != 0 && calcdate.getDay() != 6)
+                                                            { // 0 for Sunday, 6 for Saturday in Groovy's Calendar
+                                                                businessDayCount++
+                                                            }
+                                                            calcdate= calcdate.plus(1)
+                                                        }
+                                                        if(biweeklysalPI)
+                                                        {
+                                                            if(it.crossDimCell('IncreSalValue',varPPID).isMissing())
+                                                            {
+                                                                biweeklysalPI = ((((it.crossDimCell('Working_Days',varPPID).Data - businessDayCount)/10) * it.Data * (1+pirows.split(',')[0].toDouble())) + ((businessDayCount/10) * it.Data * (1+pirows.split(',')[0].toDouble()) * (1+pirows.split(',')[2].toDouble()) )) * it.crossDimCell('FTE').getData()
+                                                                /*(((it.crossDimCell('Working_Days',varPPID).Data - businessDayCount)/10) *  biweeklysalPI.toDouble()) + ((businessDayCount/10) * biweeklysalPI.toDouble() * (1+pirows.split(',')[2].toDouble()))*/
+                                                            }
+                                                            else
+                                                            {
+                                                                biweeklysalPI = ((((it.crossDimCell('Working_Days',varPPID).Data - businessDayCount)/10) * it.crossDimCell('IncreSalValue',varPPID).Data * (1+pirows.split(',')[0].toDouble())) + ((businessDayCount/10) * it.crossDimCell('IncreSalValue',varPPID).Data * (1+pirows.split(',')[0].toDouble()) * (1+pirows.split(',')[2].toDouble()) )) * it.crossDimCell('FTE').getData()
+                                                            }
+                                                        }
+                                                        else
+                                                        {
+                                                            if(it.crossDimCell('IncreSalValue',varPPID).isMissing())
+                                                            {
+                                                                biweeklysalPI = ((((it.crossDimCell('Working_Days',varPPID).Data - businessDayCount)/10) * it.Data) + ((businessDayCount/10) * it.Data * (1+pirows.split(',')[2].toDouble()))) * it.crossDimCell('FTE').getData()
+                                                            }
+                                                            else
+                                                            {
+                                                                biweeklysalPI = ((((it.crossDimCell('Working_Days',varPPID).Data - businessDayCount)/10) * it.crossDimCell('IncreSalValue',varPPID).Data) + ((businessDayCount/10) * it.crossDimCell('IncreSalValue',varPPID).Data * (1+pirows.split(',')[2].toDouble()))) * it.crossDimCell('FTE').getData()
+                                                            }
+                                                        }
+                                                        it.crossDimCell('ST_5001',varPPID).Data = biweeklysalPI.toDouble()
+                                                        PIFlag = 'Increase'
+                                                    }
+                                                    else  if(PIDate2 <= startDateStr)
+                                                    {
+                                                        if(biweeklysalPI)
+                                                        {
+                                                            if(it.crossDimCell('IncreSalValue',varPPID).isMissing())
+                                                            {
+                                                                biweeklysalPI = ((it.crossDimCell('Working_Days',varPPID).Data/10) * it.Data * (1+pirows.split(',')[0].toDouble()) * (1+pirows.split(',')[2].toDouble()) ) * it.crossDimCell('FTE').getData()
+                                                                /*( biweeklysalPI.toDouble() * (1+pirows.split(',')[2].toDouble())) */
+                                                            }
+                                                            else
+                                                            {
+                                                                biweeklysalPI = ((it.crossDimCell('Working_Days',varPPID).Data/10) * it.crossDimCell('IncreSalValue',varPPID).Data * (1+pirows.split(',')[0].toDouble()) * (1+pirows.split(',')[2].toDouble()) ) * it.crossDimCell('FTE').getData()
+                                                            }
+                                                        }
+                                                        else
+                                                        {
+                                                            if(it.crossDimCell('IncreSalValue',varPPID).isMissing())
+                                                            {
+                                                                biweeklysalPI = (((it.crossDimCell('Working_Days',varPPID).Data/10) * it.Data * (1+pirows.split(',')[2].toDouble()))) * it.crossDimCell('FTE').getData()
+                                                            }
+                                                            else
+                                                            {
+                                                                biweeklysalPI = (((it.crossDimCell('Working_Days',varPPID).Data/10) * it.crossDimCell('IncreSalValue',varPPID).Data * (1+pirows.split(',')[2].toDouble()))) * it.crossDimCell('FTE').getData()
+                                                            }
+                                                        }
+                                                        it.crossDimCell('ST_5001',varPPID).Data = biweeklysalPI.toDouble()
+                                                        PIFlag = 'Increase'
+                                                    }
+                                                    else  if(PIDate2 > endDateStr && !PIFlag.equals('Increase'))
+                                                    {
+                                                        if(!it.crossDimCell('Working_Days',varPPID).isMissing())
+                                                        {
+                                                            println "I am not in planned increases logic 3 "+varPPID+" "+it.crossDimCell('Salary_Plan').getDataAsSmartListMemberName()
+                                                            if(it.crossDimCell('IncreSalValue',varPPID).isMissing())
+                                                            {
+                                                                it.crossDimCell('ST_5001',varPPID).Data = (it.crossDimCell('Working_Days',varPPID).Data/10) * it.Data * it.crossDimCell('FTE',varPPID).getData()
+                                                            }
+                                                            else
+                                                            {
+                                                                it.crossDimCell('ST_5001',varPPID).Data = (it.crossDimCell('Working_Days',varPPID).Data/10) * it.crossDimCell('IncreSalValue',varPPID).Data * it.crossDimCell('FTE',varPPID).getData()
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        /*If for checking Salary Plan closes here*/
+                                        else
+                                        {
+                                            if(!it.crossDimCell('Working_Days',varPPID).isMissing()  && !PIFlag.equals('Increase'))
+                                            {
+                                                println "I am not in planned increases logic 4 "+varPPID
+                                                if(it.crossDimCell('IncreSalValue',varPPID).isMissing())
+                                                {
+                                                    it.crossDimCell('ST_5001',varPPID).Data = (it.crossDimCell('Working_Days',varPPID).Data/10) * it.Data * it.crossDimCell('FTE',varPPID).getData()
+
+                                                }
+                                                else
+                                                {
+                                                    it.crossDimCell('ST_5001',varPPID).Data = (it.crossDimCell('Working_Days',varPPID).Data/10) * it.crossDimCell('IncreSalValue',varPPID).Data * it.crossDimCell('FTE',varPPID).getData()
+                                                }
+                                            }
+                                        }/*Else for Salary Plan Check Closes here*/
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                cube.saveGrid(grid21)
+            }
+        } /*IF Closed*/
+        else
+        {
+            println "I am in removing planned increases logic"
+            FlexibleDataGridDefinitionBuilder builder22 = cube.flexibleDataGridDefinitionBuilder()
+
+            builder22.setSuppressMissingRows(true)
+            builder22.setSuppressMissingBlocks(true)
+            builder22.setPov('Cur_Forecast','Draft',CurrYear)
+            builder22.addColumn(ppRList,'BegBalance','Bi-Weekly_Salary','Working_Days','ST_5001','Increment_Date','Step','Grade','Salary_Plan','IncreSalValue','FTE')
+            builder22.addRow('ILvl0Descendants(Total_Client)',EmpList,'ILvl0Descendants(Existing_Positions)','ILvl0Descendants(New_Positions)',deptmem)
+
+            cube.loadGrid(builder22.build(), false).withCloseable { grid22 ->
+                grid22.dataCellIterator('Bi-Weekly_Salary').each{ it ->
+                    DatatoPrint_Trans.each{transrows ->
+                        startDateStr = new Date().parse('MM/dd/yyyy', transrows.split(',')[0])
+                        endDateStr = new Date().parse('MM/dd/yyyy', transrows.split(',')[1])
+                        def varPPID = transrows.split(',')[2]
+                        if(ppRList.contains(varPPID))
+                        {
+                            if(it.getPeriodName().equals('BegBalance'))
+                            {
+                                if(!it.crossDimCell('Working_Days',varPPID).isMissing())
+                                {
+                                    if(it.crossDimCell('IncreSalValue',varPPID).isMissing())
+                                    {
+                                        it.crossDimCell('ST_5001',varPPID).Data = (it.crossDimCell('Working_Days',varPPID).Data/10) * it.Data * it.crossDimCell('FTE').getData()
+                                    }
+                                    else
+                                    {
+                                        it.crossDimCell('ST_5001',varPPID).Data = (it.crossDimCell('Working_Days',varPPID).Data/10) * it.crossDimCell('IncreSalValue',varPPID).Data * it.crossDimCell('FTE').getData()
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                cube.saveGrid(grid22)
+            }
+        }
+    }
+
+    String calcScript =
+            """
+     SET UPDATECALC OFF;
+     SET EMPTYMEMBERSETS ON;
+
+     FIX(&CurrYear,"Cur_Forecast","Draft","${ppRList.join('", "')}",@Relative("Total_Client",0),@Remove(@Relative("Total_Employees",0),"Dept_Level_Entries"),@Relative("Existing_Positions",0),@Relative("New_Positions",0),@Relative("RC_33A00",0))
+      "FTE"
+      (
+        IF("FTE" != #Missing)
+
+            IF("Employee_Category"->"BegBalance" == [[SL_Employee_Category.L]] OR "Employee_Category"->"BegBalance" == [[SL_Employee_Category.K]])
+
+            "ST_5001" = "ST_5001" * (1+"No_Client"->"No_Department"->"No_Positions"->"No_Employee"->"LStatus_Vacation_Rate"->"BegBalance");
+
+            ENDIF
+
+            IF("Employee_Category"->"BegBalance" == [[SL_Employee_Category.L]] /*OR "Employee_Category"->"BegBalance" == [[SL_Employee_Category.M]] OR "Employee_Category"->"BegBalance" == [[SL_Employee_Category.K]]*/)
+
+
+            "ST_5121" = "No_Client"->"No_Department"->"No_Positions"->"No_Employee"->"Health_and_Welfare_Amount"->"BegBalance" * ("Working_Days"/10) * "FTE";
+            ELSE
+
+             "ST_5121" = #Missing;
+
+            ENDIF
+            "ST_5294" = ("ST_5001"+"ST_5010"+"ST_5020") * "No_Client"->"No_Department"->"No_Positions"->"No_Employee"->"Benefits_Chargeback_Rate"->"BegBalance";
+        ENDIF
+
+      )
+     ENDFIX
+    """
+    println calcScript
+    return calcScript.toString()
+}

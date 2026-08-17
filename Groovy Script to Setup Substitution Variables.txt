@@ -1,0 +1,56 @@
+/* 
+Script Name: Groovy Script to setup substitution variables
+
+*/
+
+
+/*RTPS:  {BudgetYear},{CurrentYear},{PYear},{CurrentPP},{PriorPP},{PriorFcst}*/ 
+
+
+// Prompts the years and periods values to update the corresponding Substitution Variables
+
+operation.Application.setSubstitutionVariableValue("BudYear",rtps.BudgetYear.toString())
+operation.Application.setSubstitutionVariableValue("CurrYear",rtps.CurrentYear.toString())
+operation.Application.setSubstitutionVariableValue("PriorYear",rtps.PYear.toString())
+operation.Application.setSubstitutionVariableValue("CurrPP",rtps.CurrentPP.toString())
+operation.Application.setSubstitutionVariableValue("PriorPP",rtps.PriorPP.toString())
+operation.Application.setSubstitutionVariableValue("PriorFcst",rtps.PriorFcst.toString())
+
+Cube cube = operation.application.getCube("WFPlan")
+
+Dimension ScenarioDim = operation.application.getDimension("Scenario")
+
+List<Member> mbrlist = ScenarioDim.getEvaluatedMembers('Lvl0Descendants(Forecast)',cube)
+
+
+mbrlist.each { scen ->
+	if(scen.toString().equals("Cur_Forecast")) {
+		def mbrProps = ScenarioDim.getMember("Cur_Forecast").toMap()
+		if(!mbrProps["Start Year"].toString().equals(rtps.CurrentYear.toString())) {
+ 			mbrProps["Start Year"] = rtps.CurrentYear.toString().replace('"','')
+ 			mbrProps["End Year"] = rtps.CurrentYear.toString().replace('"','')
+		}
+
+		/*if(!mbrProps["Start Period"].toString().equals(rtps.CurrentPP.toString())) {
+ 			mbrProps["Start Period"] = rtps.CurrentPP.toString().replace('"','')
+		}*/
+
+		for (e in mbrProps) {
+        	println "${e.key} = ${e.value}"
+        }
+			
+        Member SceMbr = ScenarioDim.saveMember(mbrProps,DynamicChildStrategy.DYNAMIC_IF_AVAILABLE)
+	}
+	
+    else {
+		def mbrProps = ScenarioDim.getMember(scen.toString()).toMap()
+		if(!mbrProps["Start Year"].toString().equals(rtps.CurrentYear.toString())) {
+ 			mbrProps["Start Year"] = rtps.CurrentYear.toString().replace('"','')
+ 			mbrProps["End Year"] = rtps.CurrentYear.toString().replace('"','')
+		}
+
+		Member SceMbr = ScenarioDim.saveMember(mbrProps,DynamicChildStrategy.DYNAMIC_IF_AVAILABLE)
+
+	}
+
+}

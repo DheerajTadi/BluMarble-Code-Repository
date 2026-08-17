@@ -1,0 +1,35 @@
+/*
+Script Name: Execute a data integration pipeline using Groovy and Rest API
+
+*/
+
+// Defines the pipeline properties to execute the Metadata pipeline through an EPM Job
+HttpResponse<String> jsonResponse = operation.application.getConnection("WFPREST").post("/aif/rest/V1/jobs/").header("Content-Type", "application/json").body(
+        json(["jobType": "PIPELINE", "jobName": "PLMD1",
+              "variables":[ "IMPORTMODE": "Replace", "EXPORTMODE": "Merge","ATTACH_LOGS": "Yes","SEND_MAIL": "Always","SEND_TO": "CASEPMSU@Victoria1.gov.bc.ca,Dheeraj.Tadi@gov.bc.ca"] ])).asString();
+
+boolean runpipelinetoPBF = awaitCompletion(jsonResponse, "WFPREST", "Excute Metadata Pipeline")
+
+def awaitCompletion(HttpResponse<String> jsonResponse, String connectionName, String operation) {
+    final int IN_PROGRESS = -1
+
+    if (!(200..299).contains(jsonResponse.status))
+        throwVetoException("Error occured: $jsonResponse.statusText")
+
+    // Parse the JSON response to get the status of the operation. Keep polling the DM server until the operation completes.
+    ReadContext ctx = JsonPath.parse(jsonResponse.body)
+    int status = ctx.read('$.status')
+    for(long delay = 50; status == IN_PROGRESS; delay = Math.min(1000, delay * 2)) {
+        sleep(delay)
+        status = getJobStatus(connectionName, (String)ctx.read('$.jobId'))
+    }
+
+    println("$operation ${status == 0 ? "successful" : "failed"}.\n")
+    return status == 0
+}
+
+// Gets the status of the EPM Job execution
+int getJobStatus(String connectionName, String jobId) {
+    HttpResponse<String> pingResponse = operation.application.getConnection("WFPREST").get("/aif/rest/V1/jobs/" + jobId).header("Content-Type", "application/json").asString()
+    return JsonPath.parse(pingResponse.body).read('$.status')
+}

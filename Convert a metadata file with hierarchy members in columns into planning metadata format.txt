@@ -1,0 +1,420 @@
+/* 
+Script Name: Convert a metadata file with hierarchy members in columns into planning metadata format
+
+*/
+
+//Variables Definition
+def DatatoPrint = new ArrayList<String>()
+def DatatoPrint1 = new ArrayList<String>()
+def DatatoPrint2 = new ArrayList<String>()
+def DatatoPrint3 = new ArrayList<String>()
+def DatatoPrint4 = new ArrayList<String>()
+def DatatoPrint5 = new ArrayList<String>()
+def Level1, Level1Desc, Level4, Level4Desc, Level2, Level2Desc, Level0, Level0Desc, Level3, Level3Desc
+def SmartListName, Operation, Label, EntryName, EntryLabel
+
+
+/********************************Resposibility Center*************************************************/
+
+//Reads Metadata RC source file from the EPM inbox storing each column from the file in the corresponding variables
+csvIterator('Metadata_Responsibility_Centre_Workforce_EPM.csv',',').withCloseable() { rows->
+	rows.eachWithIndex { row, idx ->
+		List<String> fileRecord = row.collect{it.toString().trim()} as List<String>
+   		Level1 = "RC_"+fileRecord[0]
+   		Level1Desc = fileRecord[1].replace(',',' ')
+        Level2 = "RC_"+fileRecord[2]
+        Level2Desc = fileRecord[3].replace(',',' ')
+        Level4 = "RC_"+fileRecord[4]
+        Level4Desc = fileRecord[5].replace(',',' ')
+        Level0 = "RC_"+fileRecord[6]
+        Level0Desc = fileRecord[7].replace(',',' ')
+   
+   		//Builds the data set following the metadata layout with the parent-child relationship
+        if(Level1 != 'RC_Responsibility - Level 1') {
+     		DatatoPrint.add(Level1+','+'Dept_Rollup_by_RC'+','+Level1Desc+','+'dynamic calc'+','+Level1Desc+','+'TRUE'+','+'+')
+     			
+            if(!Level2.equals('RC_')) {
+     			if(!Level1.equals('RC_')) {
+     				DatatoPrint.add(Level2+','+Level1+','+Level2Desc+','+'dynamic calc'+','+Level2Desc+','+'TRUE'+','+'+')
+     			}
+     			else {
+     				DatatoPrint.add(Level2+','+'Dept_Rollup_by_RC'+','+Level2Desc+','+'dynamic calc'+','+Level2Desc+','+'TRUE'+','+'+')
+     			}
+     		}
+     			
+        	if(!Level4.equals('RC_')) {
+     			if(!Level2.equals('RC_')) {
+     				DatatoPrint.add(Level4+','+Level2+','+Level4Desc+','+'dynamic calc'+','+Level4Desc+','+'TRUE'+','+'+')
+     			}
+    			else if(!Level1.equals('RC_')) {
+     				DatatoPrint.add(Level4+','+Level1+','+Level4Desc+','+'dynamic calc'+','+Level4Desc+','+'TRUE'+','+'+')
+				}
+     			else {
+      				DatatoPrint.add(Level4+','+'Dept_Rollup_by_RC'+','+Level4Desc+','+'dynamic calc'+','+Level4Desc+','+'TRUE'+','+'+')
+      			}
+      		}
+      
+      		if(!Level0.equals('RC_')) {
+       			if(!Level4.equals('RC_')) {
+     				DatatoPrint.add(Level0+','+Level4+','+Level0Desc+','+'dynamic calc'+','+Level0Desc+','+'TRUE'+','+'+')
+     			}
+     			else if(!Level2.equals('RC_')) {
+      				DatatoPrint.add(Level0+','+Level2+','+Level0Desc+','+'dynamic calc'+','+Level0Desc+','+'TRUE'+','+'+')
+     			}
+     			else if(!Level1.equals('RC_')) {
+     		 		DatatoPrint.add(Level0+','+Level1+','+Level0Desc+','+'dynamic calc'+','+Level0Desc+','+'TRUE'+','+'+')
+      			}
+      			else {
+      				DatatoPrint.add(Level0+','+'Dept_Rollup_by_RC'+','+Level0Desc+','+'dynamic calc'+','+Level0Desc+','+'TRUE'+','+'+')
+      			}
+      		}
+   		}	
+	}
+}
+
+//Exports the transformed file with the respective layout and hierarchy into th EMP inbox
+if(DatatoPrint) {
+	DatatoPrint = DatatoPrint.unique()
+
+/*DatatoPrint.each{ inputrows -> 
+   println(inputrows)
+}*/
+
+	csvWriter('Metadata_Departments_RC.csv').withCloseable() { outputFileRows ->
+		//outputFileRows.writeNext('Departments'+','+'Parent'+','+'Alias: Default'+','+'Data Storage'+','+'Description'+','+'Plan Type (WFPLAN)'+','+'Aggregation (WFPLAN)')
+		outputFileRows.writeNext "Departments","Parent","Alias: Default","Data Storage","Description","Plan Type (WFPLAN)","Aggregation (WFPLAN)"
+		DatatoPrint.each { inputrows ->
+    		outputFileRows.writeNext inputrows.split(',')[0],inputrows.split(',')[1],inputrows.split(',')[2],inputrows.split(',')[3],inputrows.split(',')[4],inputrows.split(',')[5],inputrows.split(',')[6]
+		}
+  	}
+}
+
+
+/********************************Service Line*********************************************************/
+
+//Reads Metadata SL source file from the EPM inbox storing each column from the file in the corresponding variables
+csvIterator('Metadata_Service_Line-Workforce_EPM.csv',',').withCloseable() { rows->
+	rows.eachWithIndex { row, idx ->
+
+   		List<String> fileRecord = row.collect{it.toString().trim()} as List<String>
+   		Level1 = "SL_"+fileRecord[0]
+   		Level1Desc = fileRecord[1].replace(',',' ')
+   		Level3 = "SL_"+fileRecord[2]
+   		Level3Desc = fileRecord[3].replace(',',' ')
+   		Level0 = "SL_"+fileRecord[4]
+   		Level0Desc = fileRecord[5].replace(',',' ')
+   
+   		//Builds the data set following the metadata layout with the parent-child relationship
+        if(Level1 != 'SL_Service Line - Level 1') {
+     		DatatoPrint1.add(Level1+','+'Dept_Rollup_by_SL'+','+Level1Desc+','+'dynamic calc'+','+Level1Desc+','+'TRUE'+','+'+')
+     		
+            if(!Level3.equals('SL_')) {
+     			if(!Level1.equals('SL_')) {
+     				DatatoPrint1.add(Level3+','+Level1+','+Level3Desc+','+'dynamic calc'+','+Level3Desc+','+'TRUE'+','+'+')
+                }
+     			else {
+     				DatatoPrint1.add(Level3+','+'Dept_Rollup_by_SL'+','+Level3Desc+','+'dynamic calc'+','+Level3Desc+','+'TRUE'+','+'+')
+     			}
+     		}
+     
+     		if(!Level0.equals('SL_')) {
+     			if(!Level3.equals('SL_')) {
+     				DatatoPrint1.add(Level0+','+Level3+','+Level0Desc+','+'dynamic calc'+','+Level0Desc+','+'TRUE'+','+'+')
+     			}
+     			else if(!Level1.equals('SL_')) {
+     				DatatoPrint1.add(Level0+','+Level1+','+Level0Desc+','+'dynamic calc'+','+Level0Desc+','+'TRUE'+','+'+')
+     			}
+     			else {
+      				DatatoPrint1.add(Level0+','+'Dept_Rollup_by_SL'+','+Level0Desc+','+'dynamic calc'+','+Level0Desc+','+'TRUE'+','+'+')
+      			}
+      		}
+       }
+	}
+}
+
+//Exports the transformed file with the respective layout and hierarchy into th EMP inbox
+if(DatatoPrint1) {
+	DatatoPrint1 = DatatoPrint1.unique()
+
+/*DatatoPrint.each{ inputrows ->
+   println(inputrows)
+}*/
+
+	csvWriter('Metadata_Departments_SL.csv').withCloseable() { outputFileRows ->
+		outputFileRows.writeNext "Departments","Parent","Alias: Default","Data Storage","Description","Plan Type (WFPLAN)","Aggregation (WFPLAN)"
+		DatatoPrint1.each { inputrows ->
+    		outputFileRows.writeNext inputrows.split(',')[0],inputrows.split(',')[1],inputrows.split(',')[2],inputrows.split(',')[3],inputrows.split(',')[4],inputrows.split(',')[5],inputrows.split(',')[6]
+		}
+  	}
+}
+
+
+/********************************Client***************************************************************/
+
+//Reads Metadata Client source file from the EPM inbox storing each column from the file in the corresponding variables
+csvIterator('Metadata_Client-Workforce_EPM.csv',',').withCloseable() { rows->
+	rows.eachWithIndex { row, idx ->
+
+   		List<String> fileRecord = row.collect{it.toString().trim()} as List<String>
+   		Level1 = "C_"+fileRecord[0]
+   		Level1Desc = fileRecord[1].replace(',',' ')
+   		Level0 = "C_"+fileRecord[2]
+   		Level0Desc = fileRecord[3].replace(',',' ')
+   
+   		//Builds the data set following the metadata layout with the parent-child relationship
+   		if(Level1 != 'C_Client - Level 1') {
+     		DatatoPrint2.add(Level1+','+'Total_Client'+','+Level1Desc+','+'dynamic calc'+','+Level1Desc+','+'TRUE'+','+'+')
+     
+     		if(!Level0.equals('C_')) {
+     			if(!Level1.equals('C_')) {
+     				DatatoPrint2.add(Level0+','+Level1+','+Level0Desc+','+'never share'+','+Level0Desc+','+'TRUE'+','+'+')
+     			}
+     			else {
+     				DatatoPrint2.add(Level0+','+'Total_Client'+','+Level0Desc+','+'never share'+','+Level0Desc+','+'TRUE'+','+'+')
+     			}
+     		}
+   		} 
+	}
+}
+
+//Exports the transformed file with the respective layout and hierarchy into th EMP inbox
+if(DatatoPrint2) {
+	DatatoPrint2 = DatatoPrint2.unique()
+
+/*DatatoPrint.each { inputrows ->
+   println(inputrows)
+}*/
+
+	csvWriter('Metadata_Client_Layout.csv').withCloseable() { outputFileRows ->
+		outputFileRows.writeNext "Client","Parent","Alias: Default","Data Storage","Description","Plan Type (WFPLAN)","Aggregation (WFPLAN)"
+		DatatoPrint2.each { inputrows ->
+   			outputFileRows.writeNext inputrows.split(',')[0],inputrows.split(',')[1],inputrows.split(',')[2],inputrows.split(',')[3],inputrows.split(',')[4],inputrows.split(',')[5],inputrows.split(',')[6]
+		}
+	}
+}
+
+
+/********************************STOB*****************************************************************/
+
+//Reads Metadata STOB source file from the EPM inbox storing each column from the file in the corresponding variables
+csvIterator('Metadata_STOB-Workforce_EPM.csv',',').withCloseable() { rows->
+	rows.eachWithIndex { row, idx ->
+   		List<String> fileRecord = row.collect{it.toString().trim()} as List<String> 
+   		Level1 = "ST_"+fileRecord[0]
+   		Level1Desc = fileRecord[1].replace(',',' ')
+   		Level2 = "ST_"+fileRecord[2]
+   		Level2Desc = fileRecord[3].replace(',',' ')
+   		Level3 = "ST_"+fileRecord[4]
+   		Level3Desc = fileRecord[5].replace(',',' ')
+   		Level4 = "ST_"+fileRecord[6]
+   		Level4Desc = fileRecord[7].replace(',',' ')
+   		Level0 = "ST_"+fileRecord[8]
+   		Level0Desc = fileRecord[9].replace(',',' ')
+   
+   		//Builds the data set following the metadata layout with the parent-child relationship
+   		if(Level1 != 'ST_STOB - Level 1') {
+     		DatatoPrint3.add(Level1+','+'STOBs'+','+Level1Desc+','+'dynamic calc'+','+'currency'+','+'expense'+','+'flow'+','+'expense'+','+'WFPLAN'+','+'TRUE'+','+'+'+','+'dynamic calc')
+     		if(!Level2.equals('ST_')) {
+     			if(!Level1.equals('ST_')) {
+     				DatatoPrint3.add(Level2+','+Level1+','+Level2Desc+','+'dynamic calc'+','+'currency'+','+'expense'+','+'flow'+','+'expense'+','+'WFPLAN'+','+'TRUE'+','+'+'+','+'dynamic calc')
+     			}
+     			else {
+     				DatatoPrint3.add(Level2+','+'STOBs'+','+Level2Desc+','+'dynamic calc'+','+'currency'+','+'expense'+','+'flow'+','+'expense'+','+'WFPLAN'+','+'TRUE'+','+'+'+','+'dynamic calc')
+     			}
+     		}
+     
+     		if(!Level3.equals('ST_')) {
+      			if(!Level2.equals('ST_')) {
+     				DatatoPrint3.add(Level3+','+Level2+','+Level3Desc+','+'dynamic calc'+','+'currency'+','+'expense'+','+'flow'+','+'expense'+','+'WFPLAN'+','+'TRUE'+','+'+'+','+'dynamic calc')
+     			}
+     			else if(!Level1.equals('ST_')) {
+     				DatatoPrint3.add(Level3+','+Level1+','+Level3Desc+','+'dynamic calc'+','+'currency'+','+'expense'+','+'flow'+','+'expense'+','+'WFPLAN'+','+'TRUE'+','+'+'+','+'dynamic calc')
+     			}      
+     			else {
+     				DatatoPrint3.add(Level3+','+'STOBs'+','+Level3Desc+','+'dynamic calc'+','+'currency'+','+'expense'+','+'flow'+','+'expense'+','+'WFPLAN'+','+'TRUE'+','+'+'+','+'dynamic calc')
+     			}
+     		}
+     
+     		if(!Level4.equals('ST_')) {
+      			if(!Level3.equals('ST_')) {
+     				DatatoPrint3.add(Level4+','+Level3+','+Level4Desc+','+'dynamic calc'+','+'currency'+','+'expense'+','+'flow'+','+'expense'+','+'WFPLAN'+','+'TRUE'+','+'+'+','+'dynamic calc')
+     			}
+     			else if(!Level2.equals('ST_')) {
+     				DatatoPrint3.add(Level4+','+Level2+','+Level4Desc+','+'dynamic calc'+','+'currency'+','+'expense'+','+'flow'+','+'expense'+','+'WFPLAN'+','+'TRUE'+','+'+'+','+'dynamic calc')
+     			} 
+     			else if(!Level1.equals('ST_')) {
+     				DatatoPrint3.add(Level4+','+Level1+','+Level4Desc+','+'dynamic calc'+','+'currency'+','+'expense'+','+'flow'+','+'expense'+','+'WFPLAN'+','+'TRUE'+','+'+'+','+'dynamic calc')
+     			} 
+     			else {
+      				DatatoPrint3.add(Level4+','+'STOBs'+','+Level4Desc+','+'dynamic calc'+','+'currency'+','+'expense'+','+'flow'+','+'expense'+','+'WFPLAN'+','+'TRUE'+','+'+'+','+'dynamic calc')
+     			}
+     		}
+     
+     		if(!Level0.equals('ST_')) {
+     			if(!Level4.equals('ST_')) {
+     				DatatoPrint3.add(Level0+','+Level4+','+Level0Desc+','+'never share'+','+'currency'+','+'expense'+','+'flow'+','+'expense'+','+'WFPLAN'+','+'TRUE'+','+'+'+','+'never share')
+     			}
+     			else if(!Level3.equals('ST_')) {
+     				DatatoPrint3.add(Level0+','+Level3+','+Level0Desc+','+'never share'+','+'currency'+','+'expense'+','+'flow'+','+'expense'+','+'WFPLAN'+','+'TRUE'+','+'+'+','+'never share')
+     			} 
+     			else if(!Level2.equals('ST_')) {
+     				DatatoPrint3.add(Level0+','+Level2+','+Level0Desc+','+'never share'+','+'currency'+','+'expense'+','+'flow'+','+'expense'+','+'WFPLAN'+','+'TRUE'+','+'+'+','+'never share')
+     			} 
+     			else if(!Level1.equals('ST_')) {
+     				DatatoPrint3.add(Level0+','+Level1+','+Level0Desc+','+'never share'+','+'currency'+','+'expense'+','+'flow'+','+'expense'+','+'WFPLAN'+','+'TRUE'+','+'+'+','+'never share')
+     			} 
+     			else {
+      				DatatoPrint3.add(Level0+','+'STOBs'+','+Level0Desc+','+'never share'+','+'currency'+','+'expense'+','+'flow'+','+'expense'+','+'WFPLAN'+','+'TRUE'+','+'+'+','+'never share')
+     			}
+     		}
+   		}
+	}
+}
+
+//Exports the transformed file with the respective layout and hierarchy into th EMP inbox
+if(DatatoPrint3) {
+	DatatoPrint3 = DatatoPrint3.unique()
+
+/*DatatoPrint.each{ inputrows ->
+   println(inputrows)
+}*/
+
+	csvWriter('Metadata_STOB_Layout.csv').withCloseable() { outputFileRows ->
+		outputFileRows.writeNext "STOB","Parent","Alias: Default","Data Storage","Data Type","Account Type","Time Balance","Variance Reporting","Source Plan Type","Plan Type (WFPLAN)","Aggregation (WFPLAN)","Data Storage (WFPLAN)"
+		DatatoPrint3.each { inputrows ->
+    		outputFileRows.writeNext inputrows.split(',')[0],inputrows.split(',')[1],inputrows.split(',')[2],inputrows.split(',')[3],inputrows.split(',')[4],inputrows.split(',')[5],inputrows.split(',')[6],inputrows.split(',')[7],inputrows.split(',')[8],inputrows.split(',')[9],inputrows.split(',')[10],inputrows.split(',')[11]
+		}
+  	}
+}
+
+
+/********************************PROJECT*****************************************************************/
+
+//Reads Metadata Projects source file from the EPM inbox storing each column from the file in the corresponding variables
+csvIterator('Metadata_Project-Workforce_EPM.csv',',').withCloseable() { rows->
+	rows.eachWithIndex { row, idx ->
+		List<String> fileRecord = row.collect{it.toString().trim()} as List<String>
+   		Level1 = "P_"+fileRecord[0]
+   		Level1Desc = fileRecord[1].replace(',',' ')
+   		Level2 = "P_"+fileRecord[2]
+   		Level2Desc = fileRecord[3].replace(',',' ')
+   		Level3 = "P_"+fileRecord[4]
+   		Level3Desc = fileRecord[5].replace(',',' ')
+   		Level4 = "P_"+fileRecord[6]
+   		Level4Desc = fileRecord[7].replace(',',' ')
+   		Level0 = "P_"+fileRecord[8]
+   		Level0Desc = fileRecord[9].replace(',',' ')
+  
+  		//Builds the data set following the metadata layout with the parent-child relationship
+   		if(Level1 != 'P_Project - Level 1') {
+     		DatatoPrint4.add(Level1+','+'Dept_Rollup_by_Proj'+','+Level1Desc+','+'dynamic calc'+','+Level1Desc+','+'TRUE'+','+'+')
+     		
+            if(!Level2.equals('P_')) {
+     			if(!Level1.equals('P_')) {
+     				DatatoPrint4.add(Level2+','+Level1+','+Level2Desc+','+'dynamic calc'+','+Level2Desc+','+'TRUE'+','+'+')
+     			}
+     			else {
+     				DatatoPrint4.add(Level2+','+'Dept_Rollup_by_Proj'+','+Level2Desc+','+'dynamic calc'+','+Level2Desc+','+'TRUE'+','+'+')
+     			}
+     		}
+     
+     		if(!Level3.equals('P_')) {
+      			if(!Level2.equals('P_')) {
+     				DatatoPrint4.add(Level3+','+Level2+','+Level3Desc+','+'dynamic calc'+','+Level3Desc+','+'TRUE'+','+'+')
+     			}
+     			else if(!Level1.equals('P_')) {
+     				DatatoPrint4.add(Level3+','+Level1+','+Level3Desc+','+'dynamic calc'+','+Level3Desc+','+'TRUE'+','+'+')
+     			}      
+     			else {
+     				DatatoPrint4.add(Level3+','+'Dept_Rollup_by_Proj'+','+Level3Desc+','+'dynamic calc'+','+Level3Desc+','+'TRUE'+','+'+')
+     			}
+     		}
+     
+     		if(!Level4.equals('P_')) {
+      			if(!Level3.equals('P_')) {
+     				DatatoPrint4.add(Level4+','+Level3+','+Level4Desc+','+'dynamic calc'+','+Level4Desc+','+'TRUE'+','+'+')
+     			}
+     			else if(!Level2.equals('P_')) {
+     				DatatoPrint4.add(Level4+','+Level2+','+Level4Desc+','+'dynamic calc'+','+Level4Desc+','+'TRUE'+','+'+')
+     			} 
+     			else if(!Level1.equals('P_')) {
+     				DatatoPrint4.add(Level4+','+Level1+','+Level4Desc+','+'dynamic calc'+','+Level4Desc+','+'TRUE'+','+'+')
+     			} 
+     			else {
+      				DatatoPrint4.add(Level4+','+'Dept_Rollup_by_Proj'+','+Level4Desc+','+'dynamic calc'+','+Level4Desc+','+'TRUE'+','+'+')
+     			}
+     		}
+     
+     		if(!Level0.equals('P_')) {
+     			if(!Level4.equals('P_')) {
+     				DatatoPrint4.add(Level0+','+Level4+','+Level0Desc+','+'dynamic calc'+','+Level0Desc+','+'TRUE'+','+'+')
+     			}
+     			else if(!Level3.equals('P_')) {
+     				DatatoPrint4.add(Level0+','+Level3+','+Level0Desc+','+'dynamic calc'+','+Level0Desc+','+'TRUE'+','+'+')
+     			} 
+     			else if(!Level2.equals('P_')) {
+     				DatatoPrint4.add(Level0+','+Level2+','+Level0Desc+','+'dynamic calc'+','+Level0Desc+','+'TRUE'+','+'+')
+     			} 
+     			else if(!Level1.equals('P_')) {
+     				DatatoPrint4.add(Level0+','+Level1+','+Level0Desc+','+'dynamic calc'+','+Level0Desc+','+'TRUE'+','+'+')
+     			} 
+     			else {
+      				DatatoPrint4.add(Level0+','+'Dept_Rollup_by_Proj'+','+Level0Desc+','+'dynamic calc'+','+Level0Desc+','+'TRUE'+','+'+')
+     			}
+     		}
+   		}
+	}
+}
+
+//Exports the transformed file with the respective layout and hierarchy into th EMP inbox
+if(DatatoPrint4) {
+	DatatoPrint4 = DatatoPrint4.unique()
+
+/*DatatoPrint.each{ inputrows ->
+   println(inputrows)
+}*/
+
+	csvWriter('Metadata_Departments_Proj.csv').withCloseable() { outputFileRows ->
+		outputFileRows.writeNext "Departments","Parent","Alias: Default","Data Storage","Description","Plan Type (WFPLAN)","Aggregation (WFPLAN)"
+		DatatoPrint4.each { inputrows ->
+   			outputFileRows.writeNext inputrows.split(',')[0],inputrows.split(',')[1],inputrows.split(',')[2],inputrows.split(',')[3],inputrows.split(',')[4],inputrows.split(',')[5],inputrows.split(',')[6]
+		}
+  	}
+}
+
+
+/********************************JOB CLASSIFICATION SMARTLIST*****************************************************************/
+
+//Reads Metadata Job Classification source file from the EPM inbox storing each column from the file in the corresponding variables
+csvIterator('HCM_Metdata_File_Layout.csv',',').withCloseable() { rows->
+	rows.eachWithIndex { row, idx ->
+		List<String> fileRecord = row.collect{it.toString().trim()} as List<String>
+   		SmartListName = 'SL_Job_Classification'
+   		Operation = 'addentry'
+        if(fileRecord[4])
+        {
+   		EntryName = '_'+fileRecord[4]
+        }
+        if(fileRecord[5])
+        {
+   		EntryLabel = fileRecord[5]
+     	}
+        DatatoPrint5.add(SmartListName+','+Operation+','+EntryName+','+EntryLabel)
+   }
+}
+
+//Builds the data list and exports the file with the smart list layout into th EMP inbox
+
+if(DatatoPrint5) {
+	DatatoPrint5 = DatatoPrint5.unique()
+	csvWriter('SL_Job_Classification.csv').withCloseable() { outputFileRows ->
+		outputFileRows.writeNext "SmartList Name","Operation","Label","Entry Name","Entry Label","Automatically generate ID"
+		outputFileRows.writeNext "SL_Job_Classification","addsmartlist","SL_Job_Classification","","","FALSE"
+
+		DatatoPrint5.each { inputrows ->
+    		if(!inputrows.split(',')[2].equals('_Job_Code')) {
+   				outputFileRows.writeNext inputrows.split(',')[0],inputrows.split(',')[1],"",inputrows.split(',')[2],inputrows.split(',')[3],""
+ 			}
+		}
+	}
+}
