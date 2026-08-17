@@ -1,0 +1,246 @@
+/* 
+Script Name: Script to format data form columns and rows "on load" using groovy
+
+*/
+
+// Variables Definition
+def DatatoPrint = new ArrayList<String>()
+def DatatoPrint_Trans = new ArrayList<String>()
+
+def webForm = operation.grid.getSourceInfo()
+def PPMonth
+def startDateStr = new Date().parse('MM/dd/yyyy', '04/06/2025')
+def endDateStr = new Date().parse('MM/dd/yyyy', '04/19/2025')
+def formatteddate = new Date().parse('MM/dd/yyyy', '04/19/2025')
+def JVformatteddate = new Date().parse('MM/dd/yyyy', '04/19/2025')
+def Incformatteddate = new Date().parse('MM/dd/yyyy', '04/19/2025')
+
+//Connection to the WFPLAN cube and definition of the variable to store the value of the Substitution Variable "CurrYear"
+Cube cube = operation.application.getCube("WFPLAN")
+def CurrYear = cube.getSubstitutionVariableValue('CurrYear')
+
+
+// Get the Employees Dimension from the WFPLAN cube
+Dimension EmpDim = operation.application.getDimension("Employees",cube)
+Dimension PerDim = operation.application.getDimension("Period",cube)
+
+List<String> ppList = PerDim.getEvaluatedMembers('ILSiblings("&PriorPP")',cube)*.name
+println ppList
+
+// Iterates through every data cell to extract and store the member name from the "Years" dimension into the CurrYear variable
+operation.grid.dataCellIterator.each { DataCell cell ->
+	CurrYear = cell.getMemberName("Years")
+}
+
+// Builds the data grid to load, defining the POV, rows and columns
+FlexibleDataGridDefinitionBuilder builder = cube.flexibleDataGridDefinitionBuilder()
+
+builder.setPov('No_Scenario','No_Client','No_Employee','No_Version','No_Department','No_Positions',CurrYear)
+builder.addRow('ILvl0Descendants(Pay_Period_Total)')
+builder.addColumn('PP_Start_Date','PP_End_Date','PP_Month')
+
+// Takes the POV, rows and columns defined to fetch the actual data values. Converts the date object into a string with the specific pattern: MM/dd/yyyy
+cube.loadGrid(builder.build(), false).withCloseable { grid ->
+	grid.dataCellIterator('PP_Start_Date').each { it ->
+		DatatoPrint_Trans.add(it.getDataAsDate().format("MM/dd/yyyy")+','+it.crossDimCell('PP_End_Date').getDataAsDate().format("MM/dd/yyyy")+','+it.getPeriodName()+','+it.crossDimCell('PP_Month').getData())
+    }
+}
+
+DatatoPrint_Trans.each{transrows ->
+	if(transrows.split(',')[2].equals('PP1')) {
+		Incformatteddate = new Date().parse('MM/dd/yyyy', transrows.split(',')[0]) 
+    }
+}
+
+   
+//Assigns the formatted date string to each Pay Period
+operation.grid.dataCellIterator("Pay_Periods").each { DataCell cell ->
+	cell.setForceEditable(true)
+	cell.setBgColor(0xF1EFED)  
+  
+	String PeriodAlias = cell.getPeriodName()
+ 
+    DatatoPrint_Trans.each { transrows ->
+    	endDateStr = new Date().parse('MM/dd/yyyy', transrows.split(',')[1])   
+      	formatteddate = endDateStr.format("dd-MMM-yyyy")
+       	
+        if(PeriodAlias.equals(transrows.split(',')[2])) {
+		/*cell.formattedValue = PeriodAlias + " ("+formatteddate+")"*/  
+      		cell.formattedValue = " ("+formatteddate+")"
+      		
+            if(PeriodAlias.equals('PP27')) {
+        		JVformatteddate = endDateStr.format("dd-MMM-yyyy")
+      		}
+		}
+      
+      	if(PeriodAlias.equals('BegBalance')) {
+        	cell.formattedValue = 'Comments'
+      	}
+       
+      	if(PeriodAlias.equals('Period_Total')) { 
+        	cell.formattedValue = 'Pay Period Total'
+      
+      	} 
+      
+      	if(PeriodAlias.equals('Pending_JV') || PeriodAlias.equals('Posted_JV'))	{
+        	cell.formattedValue = " ("+JVformatteddate+")"
+      	}
+	}
+    	
+    //println cell.formattedValue
+	cell.setEdited(false)
+    cell.setForceReadOnly(true)     
+
+}
+
+//Assigns Read Only to the Final version
+operation.grid.dataCellIterator.each { DataCell cell ->
+	//println cell.getVersionName()
+  	if(cell.getVersionName().equals('Final')) {
+    	cell.setForceReadOnly(true)
+	}
+}
+
+//Format color to the Totalized cells and FTE in the data form
+if(webForm.name.toString().contains('WFP - Employee STOB Planning - Costing') ) {
+	operation.grid.dataCellIterator.each { DataCell cell ->
+    
+       
+   
+   		if(cell.getMemberName("Employees").equals('Total_Employees') && cell.getMemberName("Positions").equals('Total_Positions') && cell.getMemberName("STOB").equals('FTE')) {
+       		cell.bgColor = 0xC7C7C7
+		}
+        
+        if(cell.getMemberName("Employees").equals('Total_Employees') && cell.getMemberName("Positions").equals('Total_Positions') && (cell.getMemberName("STOB").equals('ST_EC50') || cell.getMemberName("STOB").equals('ST_EC51') || cell.getMemberName("STOB").equals('ST_EC52'))) {
+       		cell.bgColor = 0xE1E8F3
+		} 
+        
+        if(cell.getMemberName("Employees").equals('Total_Employees') && cell.getMemberName("Positions").equals('Total_Positions') && cell.getMemberName("STOB").equals('ST_EA01')) {
+       		cell.bgColor = 0xBECDE4
+		}  
+        
+        
+        if(cell.getAccountName().equals('ST_EA01')) {
+       		cell.bgColor = 0xBECDE4
+		}   
+	}
+}
+
+//Iterates on the data form making some of the cells read-only and applying color formatting
+if(webForm.name.toString().contains('WFP - Employee Properties - Costing') || webForm.name.toString().contains('WFP - Employee Properties - Forecast')) {
+    operation.grid.dataCellIterator.each { DataCell cell ->
+
+        def mbrprops = EmpDim.getMember(cell.getMemberName("Employees")).toMap()
+
+        if(mbrprops["Parent"].toString().equals("Existing_Employees")) {
+            if(cell.getAccountName().equals('Salary_Plan') || cell.getAccountName().equals('Grade') || cell.getAccountName().equals('Step') || cell.getAccountName().equals('Employee_Category') || cell.getAccountName().equals('Employee_Sub-Category')|| cell.getAccountName().equals('Position_Start_Date') || cell.getAccountName().equals('Position_End_Date') || cell.getAccountName().equals('Bi-Weekly_Salary')) {
+                cell.setForceReadOnly(true)
+            }
+
+            if(cell.getAccountName().equals('Increment_Date')) {
+                if(!cell.isMissing() && !cell.crossDimCell('IncreDateIdentifier').isMissing()) {
+                    cell.setForceReadOnly(true)
+                }
+                /*If increment date is less than the PP1 start date then flag it*/
+                if(!cell.isMissing())
+                {
+                    if(cell.getDataAsDate() < Incformatteddate)
+                    {
+                        cell.bgColor = 0xFF9F9F /*0xFAA0A0*/
+                    }
+                }
+            }
+        }
+
+        if(mbrprops["Parent"].toString().equals("Planned_Hires")) {
+            if(cell.getAccountName().equals('Salary_Plan')) {
+                cell.setForceReadOnly(true)
+            }
+        }
+
+
+        if(cell.getAccountName().equals('Position_End_Date')) {
+            cell.setForceReadOnly(true)
+        }
+
+        if(cell.getAccountName().equals('Employee_Status')) {
+            if(cell.getFormattedValue().equals('Active')) {
+                cell.bgColor = 0xD3EEF1 /*0xeeffcc*/
+            }
+
+            if(cell.getFormattedValue().equals('New')) {
+                cell.bgColor = 0x7BCBD3 /*0xffe6e6*/
+            }
+
+            if(cell.getFormattedValue().equals('Planned Departure')) {
+                cell.bgColor = 0xFCBA19 /*0xFA9898*/
+            }
+
+            if(cell.getFormattedValue().equals('Transfer Out')) {
+                cell.bgColor = 0xFFB8B8
+            }
+
+            if(cell.getFormattedValue().equals('Transfer In')) {
+                cell.bgColor = 0xB8FFE0
+            }
+
+        }
+    }
+}
+
+//Make the closed pay periods read only for the Current Forecast Scenario*/
+//Format color to the Totalized cells and FTE in the data form
+if(webForm.name.toString().contains('WFP - Employee STOB Planning - Forecast') || webForm.name.toString().contains('WFP - Department Level Adjustments - Forecast')) {
+    operation.grid.dataCellIterator.each { DataCell cell ->
+
+        if(ppList.contains(cell.getPeriodName()) /*|| cell.getPeriodName().equals('Period_Total')*/)
+        {
+            cell.setForceReadOnly(true)
+        }
+        else
+        {
+
+            if(cell.getMemberName("Employees").equals('Total_Employees') && cell.getMemberName("Positions").equals('Total_Positions') && cell.getMemberName("STOB").equals('FTE')) {
+                cell.bgColor = 0xC7C7C7
+            }
+
+            if(cell.getMemberName("Employees").equals('Total_Employees') && cell.getMemberName("Positions").equals('Total_Positions') && (cell.getMemberName("STOB").equals('ST_EC50') || cell.getMemberName("STOB").equals('ST_EC51') || cell.getMemberName("STOB").equals('ST_EC52'))) {
+                cell.bgColor = 0xE1E8F3
+            }
+
+            if(cell.getMemberName("Employees").equals('Total_Employees') && cell.getMemberName("Positions").equals('Total_Positions') && cell.getMemberName("STOB").equals('ST_EA01')) {
+                cell.bgColor = 0xBECDE4
+            }
+
+
+        }
+
+        if(cell.getAccountName().equals('ST_EA01')) {
+            cell.bgColor = 0xBECDE4
+        }
+
+    }
+}
+    
+//STOB ST_EA52 Adjustment Read-Only    
+if(webForm.name.toString().contains('WFP - Employee STOB Planning - Costing') || webForm.name.toString().contains('WFP - Department Level Adjustments') || webForm.name.toString().contains('WFP - Employee STOB Planning - Forecast') || webForm.name.toString().contains('WFP - Department Level Adjustments - Forecast')) {
+    operation.grid.dataCellIterator.each { DataCell cell ->
+
+        if(cell.getAccountName().equals('ST_52EA Adjustment')) {
+            cell.setForceReadOnly(true)
+        }
+    }
+}
+
+//Dept Level Entries Read-Only on main STOB forms    
+if(webForm.name.toString().contains('WFP - Employee STOB Planning - Costing') || webForm.name.toString().contains('WFP - Employee STOB Planning - Forecast')) {
+    operation.grid.dataCellIterator.each { DataCell cell ->
+
+        if(cell.getMemberName("Employees").equals('Dept_Level_Entries')){
+            cell.setForceReadOnly(true)
+        }
+    }
+}
+
+
+

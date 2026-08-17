@@ -1,0 +1,127 @@
+/* 
+Script Name: Groovy Script to convert a data file into EPM Load format
+
+*/
+
+//Variables Definition
+def DatatoPrint = new ArrayList<String>()
+def DatatoPrint_Trans = new ArrayList<String>()
+def startDateStr = new Date().parse('MM/dd/yyyy', '04/06/2025')
+def endDateStr = new Date().parse('MM/dd/yyyy', '04/19/2025')
+def increDateStr = new Date().parse('MM/dd/yyyy', '04/19/2025')
+def varEmployeeID,varEmployeeStatus,varPositionID,varJobCode,varDept,varGLAccount,varCat,varSubCat,varProject,varFTE,varSalaryPlan,varGrade,varStep,varClient,JobClassName,JobClassName2
+double varBiWeeklySal, varBiWeeklSayBef, varTMA
+def PPMonth
+
+//Connection to the WFPLAN cube and definition of the variable to store the value of the Substitution Variable "BudYear"
+Cube cube = operation.application.getCube("WFPLAN")
+def BudYear = cube.getSubstitutionVariableValue('BudYear')
+
+//Reads the source file from the EPM inbox and transforms each column of the file adding the corresponding prefixes  
+csvIterator('HCM_Properties_File_Layout.csv',',').withCloseable() { rows->
+    rows.eachWithIndex { row, idx ->
+        List<String> fileRecord = row.collect{it.toString().trim()} as List<String>
+        varEmployeeID = "EMP_"+fileRecord[0]
+
+        //Checks the employee status in the source file. Properties to load need to be from Active employees.
+        if(!varEmployeeID.equals('EMP_Employee_ID')) {
+            if(fileRecord[1].equals("Active") || fileRecord[1].equals("Leave With Pay") || fileRecord[1].equals("Leave of Absence")) {
+                if(fileRecord[2].equals("Active")) {
+                    varEmployeeStatus = "Active"
+                }
+                else {
+                    varEmployeeStatus = "InActive"
+                }
+            }
+            else {
+                varEmployeeStatus = "InActive"
+            }
+
+            varPositionID = "POS_"+fileRecord[3]
+            varClient = fileRecord[9]
+            startDateStr = fileRecord[4]
+            endDateStr = fileRecord[5]
+
+            try{
+                JobClassName = operation.application.getSmartList("SL_Job_Classification").getEntry('_'+fileRecord[6]).getLabel()
+            }
+            catch (Exception e) {
+             /* Builds the data grid to load, defining the POV, rows and columns. 
+             Gets the Job Classification for the Position from the table */
+
+                FlexibleDataGridDefinitionBuilder builder3 = cube.flexibleDataGridDefinitionBuilder()
+                builder3.setSuppressMissingRows(true)
+                builder3.setSuppressMissingBlocks(true)
+                builder3.setPov('BegBalance','Working_Budget','No_Employee','No_Department',BudYear,'Draft','C_'+varClient)
+                builder3.addRow(varPositionID)
+                builder3.addColumn('Job_Code','Job_Classification','Salary_Plan','Grade')
+
+                cube.loadGrid(builder3.build(), false).withCloseable { grid ->
+                    grid.dataCellIterator('Job_Code').each { it ->
+                        JobClassName = it.crossDimCell('Job_Classification').getFormattedValue()
+                    }
+                }
+            }
+
+            varJobCode = JobClassName
+
+/**************************************************************/
+
+            //Assigns each column of the file to the corresponding variables
+            varDept = "D_"+fileRecord[8]
+
+            if(fileRecord[12].trim().equals('')) {
+                varProject = fileRecord[10].substring(0,2)+"00000"
+            }
+            else {
+                varProject = fileRecord[12].trim()
+            }
+
+            varGLAccount = fileRecord[9]+'.'+fileRecord[10]+'.'+fileRecord[11]+'.'+varProject
+            varCat = fileRecord[13]
+            varSubCat = fileRecord[14]
+            println fileRecord[15]
+            varBiWeeklSayBef = fileRecord[15].toDouble()
+            varFTE = fileRecord[19]
+
+            if(fileRecord[16]) {
+                varTMA = fileRecord[16].toDouble()
+                varBiWeeklySal = ((varBiWeeklSayBef+varTMA)/varFTE.toDouble())
+            }
+            else {
+                varBiWeeklySal = (varBiWeeklSayBef)/varFTE.toDouble()
+            }
+
+            println "Iam here"
+            varFTE = fileRecord[19]
+            varSalaryPlan = fileRecord[20]
+            increDateStr = fileRecord[21]
+
+            if(fileRecord[22]) {
+                if(fileRecord[22].matches("^[0-9].*")) {
+                    varGrade =  fileRecord[20]+"_"+fileRecord[22].trim()
+                }
+                else {
+                    varGrade =  fileRecord[20]+"_"+fileRecord[22].trim()
+                }
+            }
+            else {
+                varGrade = " "
+            }
+
+            varStep = fileRecord[23]
+
+            if(!varEmployeeStatus.equals("InActive")) {
+                DatatoPrint.add(varEmployeeID+','+varEmployeeStatus+','+varPositionID+','+startDateStr+','+endDateStr+','+varJobCode+','+varDept+','+varGLAccount+','+varCat+','+varSubCat+','+varBiWeeklySal+','+varFTE+','+varSalaryPlan+','+increDateStr+','+varStep+','+varGrade+','+varClient)
+            }
+        }
+    }
+}
+
+//Exports the transformed file in the corresponding layout to the EPM inbox
+csvWriter('HCM_Properties_File_Layout_T.csv').withCloseable() { outputFileRows ->
+    outputFileRows.writeNext "Employee","Employee_Status","Position","Position_Start_Date","Position_End_Date","Job_Code","Department","GL_Account","Employee_Category","Employee_Sub-Category","Bi-Weekly_Salary","FTE","Salary_Plan","Increment_Date","Step","Grade","Client"
+    DatatoPrint.each { inputrows ->
+        outputFileRows.writeNext inputrows.split(',')[0],inputrows.split(',')[1],inputrows.split(',')[2],inputrows.split(',')[3],inputrows.split(',')[4],inputrows.split(',')[5],inputrows.split(',')[6],inputrows.split(',')[7],inputrows.split(',')[8],inputrows.split(',')[9],inputrows.split(',')[10],inputrows.split(',')[11],inputrows.split(',')[12],inputrows.split(',')[13],inputrows.split(',')[14],inputrows.split(',')[15],inputrows.split(',')[16]
+    }
+}

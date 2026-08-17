@@ -1,0 +1,198 @@
+/*
+
+Script: Groovy Script to push data from Workforce to Financial Cube with data transformation
+
+*/
+
+def DatatoPrint = new ArrayList<String>()
+def DatatoPrint_Trans = new ArrayList<String>()
+
+
+def varSTOB,varClient,varEmployee,VarPosition,varFTEBurn,varAmount,varPayPeriodEndDate,varPPID,varYear,AccountName
+
+def PPMonth,PeriodID,PeriodName,varP,varRC,varSL
+
+def startDateStr = new Date().parse('MM/dd/yyyy', '04/06/2025')
+def endDateStr = new Date().parse('MM/dd/yyyy', '04/19/2025')
+def filename = 'WF_File_Layout_Full.csv'
+
+Cube cube = operation.application.getCube("WFPLAN")
+def BudYear = cube.getSubstitutionVariableValue('BudYear')
+def CurrYear = cube.getSubstitutionVariableValue('CurrYear')
+
+Dimension Dep = operation.application.getDimension("Departments")
+Dimension Acc = operation.application.getDimension("STOB")
+def StobList = Acc.getEvaluatedMembers(/@Remove(@Relative(ST_E000,0),Posted_Recoveries_JV)/,cube)
+
+Dimension PerDim = operation.application.getDimension("Period",cube)
+
+/*Get the list of pay periods that are Open*/
+List<String> ppRList = PerDim.getEvaluatedMembers('RSiblings("&PriorPP")',cube)*.name
+println ppRList
+
+/*Get the list of pay periods that are Closed*/
+List<String> ppLList = PerDim.getEvaluatedMembers('ILSiblings("&PriorPP")',cube)*.name
+println ppLList
+
+FlexibleDataGridDefinitionBuilder builder = cube.flexibleDataGridDefinitionBuilder()
+
+builder.setSuppressMissingRows(true)
+builder.setPov('No_Scenario','No_Client','No_Employee','No_Version','No_Department','No_Positions',BudYear)
+builder.addRow('ILvl0Descendants(Pay_Period_Total)')
+builder.addColumn('PP_Start_Date','PP_End_Date','PP_Month')
+
+cube.loadGrid(builder.build(), false).withCloseable { grid ->
+    grid.dataCellIterator('PP_Start_Date').each{ it ->
+        DatatoPrint.add(it.getDataAsDate().format("MM/dd/yyyy")+','+it.crossDimCell('PP_End_Date').getDataAsDate().format("MM/dd/yyyy")+','+it.getPeriodName()+','+it.crossDimCell('PP_Month').getData())
+    }
+}
+
+
+/*println DatatoPrint*/
+FlexibleDataGridDefinitionBuilder builder1 = cube.flexibleDataGridDefinitionBuilder()
+
+builder1.setSuppressMissingRows(true)
+builder1.setSuppressMissingColumns(true)
+builder1.setSuppressMissingBlocks(true)
+builder1.setPov('Working_Budget','Draft',BudYear)
+builder1.addColumn(StobList,'ILvl0Descendants(Pay_Period_Total)','Pending_JV')
+builder1.addRow('ILvl0Descendants(Total_Client)','ILvl0Descendants(Dept_Rollup_by_RC)','ILvl0Descendants(Total_Employees)','ILvl0Descendants(Total_Positions)')
+
+cube.loadGrid(builder1.build(), false).withCloseable { grid1 ->
+    grid1.dataCellIterator().each{ it ->
+
+        Member varDept = Dep.getMember(it.getMemberName("Departments"))
+        List varDepts = varDept.getBaseAndSharedMembers(cube)
+
+        varDepts.each{dept->
+            def mbrprops = Dep.getMember(dept).toMap()
+            if(mbrprops["Parent"].toString().contains("RC"))
+            {
+                varRC = mbrprops["Parent"].toString()
+            }
+            else if(mbrprops["Parent"].toString().contains("SL"))
+            {
+                varSL = mbrprops["Parent"].toString()
+            }
+            else if(mbrprops["Parent"].toString().contains("P"))
+            {
+                varP = mbrprops["Parent"].toString()
+            }
+            //println varRC+varSL
+        }
+        if(varP.equals(''))
+        {
+            varP = "P_"+varRC.substring(3,5)+"00000"
+        }
+//println varP
+
+        DatatoPrint.each{inputrows ->
+            if(it.getPeriodName().equals(inputrows.split(',')[2]))
+            {
+                PeriodID = inputrows.split(',')[3]
+                if (PeriodID.equals('1.0')){
+                    PeriodName = 'Apr'
+                }
+                else if(PeriodID.equals('2.0')){
+                    PeriodName = 'May'
+                }
+                else if(PeriodID.equals('3.0')){
+                    PeriodName = 'Jun'
+                }
+                else if(PeriodID.equals('4.0')){
+                    PeriodName = 'Jul'
+                }
+                else if(PeriodID.equals('5.0')){
+                    PeriodName = 'Aug'
+                }
+                else if(PeriodID.equals('6.0')){
+                    PeriodName = 'Sep'
+                }
+                else if(PeriodID.equals('7.0')){
+                    PeriodName = 'Oct'
+                }
+                else if(PeriodID.equals('8.0')){
+                    PeriodName = 'Nov'
+                }
+                else if(PeriodID.equals('9.0')){
+                    PeriodName = 'Dec'
+                }
+                else if(PeriodID.equals('10.0')){
+                    PeriodName = 'Jan'
+                }
+                else if(PeriodID.equals('11.0')){
+                    PeriodName = 'Feb'
+                }
+                else if(PeriodID.equals('12.0')){
+                    PeriodName = 'Mar'
+                }
+            }
+        }
+        if(it.getPeriodName().equals('Pending_JV'))
+        {
+            PeriodName = 'Mar'
+        }
+        if(it.getMemberName("STOB").equals('ST_50EA Adjustment'))
+        {
+            AccountName = 'ST_50EA'
+        }
+        else if(it.getMemberName("STOB").equals('ST_51EA Adjustment'))
+        {
+            AccountName = 'ST_51EA'
+        }
+        else if(it.getMemberName("STOB").equals('ST_52EA Adjustment'))
+        {
+            AccountName = 'ST_52EA'
+        }
+        else
+        {
+            AccountName = it.getMemberName("STOB")
+        }
+
+        DatatoPrint_Trans.add(it.getScenarioName()+','+it.getVersionName()+','+PeriodName+','+it.getYearName()+','+AccountName+','+it.getMemberName("Client")+','+varRC+','+varSL+','+varP+','+it.getData())
+    }
+}
+
+/*  println DatatoPrint_Trans*/
+
+csvWriter(filename).withCloseable(){ outputFileRows ->
+
+    outputFileRows.writeNext "Scenario","Version","Period","Years","STOB","Client","Responsibility_Centre","Service_Line","Project","Amount"
+    DatatoPrint_Trans.each{ inputrows ->
+        outputFileRows.writeNext inputrows.split(',')[0],inputrows.split(',')[1],inputrows.split(',')[2],"20"+inputrows.split(',')[3].substring(2),inputrows.split(',')[4],inputrows.split(',')[5],inputrows.split(',')[6],inputrows.split(',')[7],inputrows.split(',')[8],inputrows.split(',')[9]
+    }
+}
+
+def startperiod = "Apr-"+CurrYear.substring(3,5)
+def endperiod = "Mar-"+BudYear.substring(3,5)
+
+println startperiod
+println endperiod
+
+HttpResponse<String> jsonResponse = operation.application.getConnection("PBFREST").post("/aif/rest/V1/jobs/").header("Content-Type", "application/json").body(
+        json(["jobType": "PIPELINE", "jobName": "PLWFPC",
+              "variables":[ "IMPORTMODE":"REPLACE", "EXPORTMODE":"REPLACE", "STARTPERIOD": startperiod, "ENDPERIOD": endperiod,"ATTACH_LOGS": "Yes","SEND_MAIL": "Always","SEND_TO": "Dheeraj.Tadi@gov.bc.ca","FILE_NAME": filename] ])).asString();
+
+boolean runpipelinetoPBF = awaitCompletion(jsonResponse, "PBFREST", "Push Workforce data to Financials")
+
+def awaitCompletion(HttpResponse<String> jsonResponse, String connectionName, String operation) {
+    final int IN_PROGRESS = -1
+    if (!(200..299).contains(jsonResponse.status))
+        throwVetoException("Error occured: $jsonResponse.statusText")
+
+    // Parse the JSON response to get the status of the operation. Keep polling the DM server until the operation completes.
+    ReadContext ctx = JsonPath.parse(jsonResponse.body)
+    int status = ctx.read('$.status')
+    for(long delay = 50; status == IN_PROGRESS; delay = Math.min(1000, delay * 2)) {
+        sleep(delay)
+        status = getJobStatus(connectionName, (String)ctx.read('$.jobId'))
+    }
+
+    println("$operation ${status == 0 ? "successful" : "failed"}.\n")
+    return status == 0
+}
+
+int getJobStatus(String connectionName, String jobId) {
+    HttpResponse<String> pingResponse = operation.application.getConnection("PBFREST").get("/aif/rest/V1/jobs/" + jobId).header("Content-Type", "application/json").asString()
+    return JsonPath.parse(pingResponse.body).read('$.status')
+}

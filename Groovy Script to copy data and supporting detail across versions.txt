@@ -1,0 +1,37 @@
+/* 
+Script Name: Groovy Script to Copy Data along with supporting detail
+*/
+
+
+
+
+Cube cube = operation.application.getCube("WFPLAN")
+def BudYear = cube.getSubstitutionVariableValue('BudYear')
+
+CopyDataRequest request = cube.createCopyDataRequest()
+    .setCopySupportingDetail(true) // line item details
+    .setCopyComments(true)
+    .setCopyAttachments(true)
+    
+
+
+// Set scope (Source/Target and Fixed Members)
+request.addSourceAndTarget('Draft', 'Final')
+ .addFixedMembers(operation.application.getDimension("STOB"), "ILvl0Descendants(STOB)")
+ .addFixedMembers(operation.application.getDimension("Period"), "ILvl0Descendants(Period)")
+ .addFixedMembers(operation.application.getDimension("Client"), "ILvl0Descendants(Client)")
+ .addFixedMembers(operation.application.getDimension("Employees"), "ILvl0Descendants(Employees)")
+ .addFixedMembers(operation.application.getDimension("Positions"), "ILvl0Descendants(Positions)")
+ .addFixedMembers(operation.application.getDimension("Departments"), "ILvl0Descendants(Departments)")
+ .addFixedMembers(operation.application.getDimension("Scenario"), "Working_Budget")
+ .addFixedMembers(operation.application.getDimension("Years"), BudYear)
+
+
+// Execute copy
+request.copyData()
+
+
+/* Using Rest to Execute the Copy job to launch with Administrator Privilege*/
+
+HttpResponse<String> jsonResponse = operation.application.getConnection("WFPREST").post("/HyperionPlanning/rest/v3/applications/BCGOVWFP/jobs").header("Content-Type", "application/json").body(
+        json(["jobType": "RULES", "jobName": "WFP_Officialize_Costing_Data_Job", "parameters" : [:] ])).asString();
