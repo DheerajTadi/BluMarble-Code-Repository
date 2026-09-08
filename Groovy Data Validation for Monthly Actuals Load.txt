@@ -1,0 +1,1465 @@
+def MonthWithSeasonsNonEcomm = new ArrayList<String>()
+def MonthWithOutSeasons = new ArrayList<String>()
+def MonthPOVDepartments = new ArrayList<String>()
+def MonthPOV1_Stores = new ArrayList<String>()
+def MonthPOV1_Stores_Total = new ArrayList<String>()
+def MonthPOV1_Stores_Total_Rollup = new ArrayList<String>()
+def MonthPOV1_Ecomm = new ArrayList<String>()
+def MonthPOV1_Ecomm_Total = new ArrayList<String>()
+def MonthPOV1_Ecomm_Total_Rollup = new ArrayList<String>()
+def MonthValidationIssue = new ArrayList<String>()
+def MonthValidationIssue_WPvsACT = new ArrayList<String>()
+def MonthValidationIssue_MFPPlanvsMrchPrft = new ArrayList<String>()
+def MonthValidationIssue_1p2pvsEcomm = new ArrayList<String>()
+def MonthValidationIssue_CalcCheck = new ArrayList<String>()
+
+def VariableFileName = 'MFP_Monthly_ActData_D.txt'
+def ActualMonth
+def ActualYear
+def ScenarioList = ['Actual','WP']
+def Version
+
+double issuelog = 0
+
+double salestotal_stores = 0
+double salesunitstotal_stores = 0
+double CommissionIncome_Stores = 0
+double ServiceIncome_Stores = 0
+double SalesCost_Stores = 0
+double HOPromo_Stores = 0
+double HOClearance_Stores = 0
+double StoreInitiated_Stores = 0
+double Throws_Stores = 0
+double ReceiptsRetail_Stores = 0
+double ReceiptsCost_Stores = 0
+double ReceiptsUnits_Stores = 0
+double EOPPIRetail_Stores = 0
+double EOPPICost_Stores = 0
+double EOPPIUnits_Stores = 0
+double DCInvRetail_Stores = 0
+double DCInvCost_Stores = 0
+double DCInvUnits_Stores = 0
+double ImpInTransitRetail_Stores = 0
+double DomInTransitRetail_Stores = 0
+double DomInTransitCost_Stores = 0
+double ImpInTransitCost_Stores = 0
+double ImportOnOrder_Stores = 0
+double DomesticOnOrder_Stores = 0
+double FCInvCost_Stores = 0
+double FCInvUnits_Stores = 0
+
+double salestotal_ecomm = 0
+double salesunitstotal_ecomm = 0
+double CommissionIncome_ecomm = 0
+double ServiceIncome_ecomm = 0
+double SalesCost_ecomm = 0
+double HOPromo_ecomm = 0
+double HOClearance_ecomm = 0
+double StoreInitiated_ecomm = 0
+double Throws_ecomm = 0
+double ReceiptsRetail_ecomm = 0
+double ReceiptsCost_ecomm = 0
+double ReceiptsUnits_ecomm = 0
+double FCInvCost_ecomm = 0
+double FCInvUnits_ecomm = 0
+double CalculatedValue = 0
+
+def MonthLastDay
+def LastDay
+
+Cube cube = operation.application.getCube("MFPPlan")
+Cube cube1 = operation.application.getCube("MrchPrft")
+Dimension productDim = operation.application.getDimension("Products", cube)
+def ActYear = operation.Application.getSubstitutionVariableValue('ActYr')
+def ActMonth = operation.Application.getSubstitutionVariableValue('LastActMonth')
+def productlist = productDim.getEvaluatedMembers('@Relative("TM",0)', cube)
+def CostProductlist = productDim.getEvaluatedMembers('@UDA("Products","WeeklyShop_Product")', cube)
+def NonCostProductlist = productlist - CostProductlist
+
+println ActYear+' '+ActMonth
+
+/*Get the last day of the Actualized Month*/
+
+   FlexibleDataGridDefinitionBuilder builder = cube.flexibleDataGridDefinitionBuilder()
+   
+    builder.setPov('&ActYr', 'No Version', 'No Scenario', 'No Channel', 'Day00', 'No Product', 'No Season')
+    builder.addColumn('&LastActMonth')
+    builder.addRow('NoofDays')
+    DataGridDefinition gridDefinition = builder.build()
+    cube.loadGrid(gridDefinition, false).withCloseable { grid ->
+		grid.dataCellIterator().each {
+			  
+            MonthLastDay =  it.data.toString()
+            			
+		}
+	}
+
+LastDay = 'Day'+ MonthLastDay.toString().substring(0,2)
+
+println LastDay
+
+csvIterator(VariableFileName,'|').withCloseable() { rows ->
+
+ rows.eachWithIndex { row, idx ->
+ 
+ List<String> fileRecord = row.collect{it.toString().trim() } as List<String>
+ 
+ 
+ if(!fileRecord[0].contains("Days"))
+ {
+ 
+
+  MonthPOVDepartments.add(fileRecord[29].split("\\|")[0])
+  
+    ActualMonth = fileRecord[29].split("\\|")[2]
+    ActualYear = fileRecord[29].split("\\|")[1]
+ 
+ }
+
+ }
+
+}
+
+MonthPOVDepartments.unique()
+
+
+ MonthPOV1_Ecomm_Total_Rollup.add('Department'+'|'+'Year'+'|'+'Month'+'|'+'Season'+'|'+'Channel'+'|'+'Scenario'+'|'+'Version'+'|'+'Sales Retail'+'|'+'Sales Units'+'|'+'Commission Income'+'|'+'Service Income Retail'+'|'+'Sales Cost'+'|'+'HO Promo MD'+'|'+'HO Clearance MD'+'|'+'Store Initiated MD'+'|'+'Throws'+'|'+'Receipts Retail'+'|'+'Receipts Cost'+'|'+'Receipts Units'+'|'+'FC Inv. Cost'+'|'+'FC Inv. Units')
+
+ MonthPOV1_Stores_Total_Rollup.add('Department'+'|'+'Year'+'|'+'Month'+'|'+'Season'+'|'+'Channel'+'|'+'Scenario'+'|'+'Version'+'|'+'Sales Retail'+'|'+'Sales Units'+'|'+'Commission Income'+'|'+'Service Income Retail'+'|'+'Sales Cost'+'|'+'HO Promo MD'+'|'+'HO Clearance MD'+'|'+'Store Initiated MD'+'|'+'Throws'+'|'+'Receipts Retail'+'|'+'Receipts Cost'+'|'+'Receipts Units'+'|'+'Store EOP PI Retail'+'|'+'Store EOP PI Cost'+'|'+'Store EOP PI Units'+'|'+'DC Inv. Retail'+'|'+'DC Inv. Cost'+'|'+'DC Inv. Units'+'|'+'FC Inv. Cost'+'|'+'FC Inv. Units'+'|'+'Import In-Transit Retail'+'|'+'Domestic In-Transit Retail'+'|'+'Import In-Transit Cost'+'|'+'Domestic In-Transit Cost'+'|'+'Import On-order'+'|'+'Domestic On-order')
+
+ MonthValidationIssue.add('Department'+'|'+'Year'+'|'+'Month'+'|'+'Season'+'|'+'Channel'+'|'+'Scenario'+'|'+'Version'+'|'+'Metric Name'+'|'+'Data File Value'+'|'+'MFP Value'+'|'+'Reason')
+ 
+ MonthValidationIssue_WPvsACT.add('Department'+'|'+'Year'+'|'+'Month'+'|'+'Season'+'|'+'Channel'+'|'+'Scenario'+'|'+'Version'+'|'+'Metric Name'+'|'+'WP Value'+'|'+'Actual Value'+'|'+'Reason')
+ 
+ MonthValidationIssue_MFPPlanvsMrchPrft.add('Department'+'|'+'Year'+'|'+'Month'+'|'+'Season'+'|'+'Channel'+'|'+'Scenario'+'|'+'Version'+'|'+'Metric Name'+'|'+'MFPPlan Value'+'|'+'MrchPrft Value'+'|'+'Reason')
+ 
+ MonthValidationIssue_1p2pvsEcomm.add('Department'+'|'+'Year'+'|'+'Month'+'|'+'Season'+'|'+'Channel'+'|'+'Scenario'+'|'+'Version'+'|'+'Metric Name'+'|'+'1P Value'+'|'+'2P Value'+'|'+'eCommerce Value'+'|'+'Reason')
+ 
+ MonthValidationIssue_CalcCheck.add('Department'+'|'+'Year'+'|'+'Month'+'|'+'Season'+'|'+'Channel'+'|'+'Scenario'+'|'+'Version'+'|'+'Metric Name'+'|'+'Calc Value'+'|'+'MFP Value'+'|'+'Reason')
+
+MonthPOVDepartments.each{inputrows ->
+
+
+
+salestotal_stores = 0
+salesunitstotal_stores = 0
+CommissionIncome_Stores = 0
+ServiceIncome_Stores = 0
+SalesCost_Stores = 0
+HOPromo_Stores = 0
+HOClearance_Stores = 0
+StoreInitiated_Stores = 0
+Throws_Stores = 0
+ReceiptsRetail_Stores = 0
+ReceiptsCost_Stores = 0
+ReceiptsUnits_Stores = 0
+EOPPIRetail_Stores = 0
+EOPPICost_Stores = 0
+EOPPIUnits_Stores = 0
+DCInvRetail_Stores = 0
+DCInvCost_Stores = 0
+DCInvUnits_Stores = 0
+ImpInTransitRetail_Stores = 0
+DomInTransitRetail_Stores = 0
+ImpInTransitCost_Stores = 0
+DomInTransitCost_Stores = 0
+ImportOnOrder_Stores = 0
+DomesticOnOrder_Stores = 0
+FCInvCost_Stores = 0
+FCInvUnits_Stores = 0
+
+salestotal_ecomm = 0
+salesunitstotal_ecomm = 0
+CommissionIncome_ecomm = 0
+ServiceIncome_ecomm = 0
+SalesCost_ecomm = 0
+HOPromo_ecomm = 0
+HOClearance_ecomm = 0
+StoreInitiated_ecomm = 0
+Throws_ecomm = 0
+ReceiptsRetail_ecomm = 0
+ReceiptsCost_ecomm = 0
+ReceiptsUnits_ecomm = 0
+FCInvCost_ecomm = 0
+FCInvUnits_ecomm = 0
+
+
+csvIterator(VariableFileName,'|').withCloseable() { rows ->
+
+ rows.eachWithIndex { row, idx ->
+ 
+ List<String> fileRecord = row.collect{it.toString().trim() } as List<String>
+ 
+ 
+ if(!fileRecord[0].contains("Days"))
+ {
+ 
+ if(fileRecord[29].split("\\|")[0].contains(inputrows))
+ {
+ 
+ if(fileRecord[29].split("\\|")[4].contains("B&M") || fileRecord[29].split("\\|")[4].contains("OG") || fileRecord[29].split("\\|")[4].contains("PFS") || fileRecord[29].split("\\|")[4].contains("SFS") || fileRecord[29].split("\\|")[4].contains("All Stores"))
+ { 
+    salestotal_stores+=fileRecord[1].toDouble()
+    salesunitstotal_stores+=fileRecord[2].toDouble()
+    CommissionIncome_Stores+=fileRecord[3].toDouble()
+    ServiceIncome_Stores+=fileRecord[4].toDouble()
+    SalesCost_Stores+=fileRecord[5].toDouble()
+    HOPromo_Stores+=fileRecord[6].toDouble()
+    HOClearance_Stores+=fileRecord[7].toDouble()
+    StoreInitiated_Stores+=fileRecord[8].toDouble()
+    Throws_Stores+=fileRecord[9].toDouble()
+    ReceiptsRetail_Stores+=fileRecord[18].toDouble()
+    ReceiptsCost_Stores+=fileRecord[19].toDouble()
+    ReceiptsUnits_Stores+=fileRecord[20].toDouble()
+    
+     if(fileRecord[29].split("\\|")[4].contains("All Stores") && fileRecord[0].contains(LastDay))
+    {
+      EOPPIRetail_Stores+=fileRecord[10].toDouble()
+      EOPPICost_Stores+=fileRecord[11].toDouble()
+      EOPPIUnits_Stores+=fileRecord[12].toDouble()
+      DCInvRetail_Stores+=fileRecord[13].toDouble()
+      DCInvCost_Stores+=fileRecord[14].toDouble()
+      DCInvUnits_Stores+=fileRecord[15].toDouble()
+      ImpInTransitRetail_Stores+=fileRecord[21].toDouble()
+      DomInTransitRetail_Stores+=fileRecord[22].toDouble()
+      ImpInTransitCost_Stores+=fileRecord[23].toDouble()
+      DomInTransitCost_Stores+=fileRecord[24].toDouble()
+      ImportOnOrder_Stores+=fileRecord[25].toDouble()
+      DomesticOnOrder_Stores+=fileRecord[26].toDouble()
+      FCInvCost_Stores+=fileRecord[16].toDouble()
+      FCInvUnits_Stores+=fileRecord[17].toDouble()
+    }
+ 
+ }
+ else if(fileRecord[29].split("\\|")[4].contains("1P") || fileRecord[29].split("\\|")[4].contains("2P"))
+ {
+    salestotal_ecomm+=fileRecord[1].toDouble()
+    salesunitstotal_ecomm+=fileRecord[2].toDouble()
+    CommissionIncome_ecomm+=fileRecord[3].toDouble()
+    ServiceIncome_ecomm+=fileRecord[4].toDouble()
+    SalesCost_ecomm+=fileRecord[5].toDouble()
+    HOPromo_ecomm+=fileRecord[6].toDouble()
+    HOClearance_ecomm+=fileRecord[7].toDouble()
+    StoreInitiated_ecomm+=fileRecord[8].toDouble()
+    Throws_ecomm+=fileRecord[9].toDouble()
+    ReceiptsRetail_ecomm+=fileRecord[18].toDouble()
+    ReceiptsCost_ecomm+=fileRecord[19].toDouble()
+    ReceiptsUnits_ecomm+=fileRecord[20].toDouble()
+    
+    if(fileRecord[0].contains(LastDay))
+    {
+      FCInvCost_ecomm+=fileRecord[16].toDouble()
+      FCInvUnits_ecomm+=fileRecord[17].toDouble()
+    }
+ 
+ }
+ 
+ }
+ 
+ }
+
+ }
+
+}
+
+ MonthPOV1_Ecomm_Total_Rollup.add(inputrows+'|'+ActualYear+'|'+ActualMonth+'|'+'All Seasons'+'|'+'eCommerce'+'|'+'Actual'+'|'+'Final'+'|'+salestotal_ecomm+'|'+salesunitstotal_ecomm+'|'+CommissionIncome_ecomm+'|'+ServiceIncome_ecomm+'|'+SalesCost_ecomm+'|'+HOPromo_ecomm+'|'+HOClearance_ecomm+'|'+StoreInitiated_ecomm+'|'+Throws_ecomm+'|'+ReceiptsRetail_ecomm+'|'+ReceiptsCost_ecomm+'|'+ReceiptsUnits_ecomm+'|'+FCInvCost_ecomm+'|'+FCInvUnits_ecomm)
+
+ MonthPOV1_Stores_Total_Rollup.add(inputrows+'|'+ActualYear+'|'+ActualMonth+'|'+'All Seasons'+'|'+'All Stores'+'|'+'Actual'+'|'+'Final'+'|'+salestotal_stores+'|'+salesunitstotal_stores+'|'+CommissionIncome_Stores+'|'+ServiceIncome_Stores+'|'+SalesCost_Stores+'|'+HOPromo_Stores+'|'+HOClearance_Stores+'|'+StoreInitiated_Stores+'|'+Throws_Stores+'|'+ReceiptsRetail_Stores+'|'+ReceiptsCost_Stores+'|'+ReceiptsUnits_Stores+'|'+EOPPIRetail_Stores+'|'+EOPPICost_Stores+'|'+EOPPIUnits_Stores+'|'+DCInvRetail_Stores+'|'+DCInvCost_Stores+'|'+DCInvUnits_Stores+'|'+FCInvCost_Stores+'|'+FCInvUnits_Stores+'|'+ImpInTransitRetail_Stores+'|'+DomInTransitRetail_Stores+'|'+ImpInTransitCost_Stores+'|'+DomInTransitCost_Stores+'|'+ImportOnOrder_Stores+'|'+DomesticOnOrder_Stores)
+
+}
+
+
+
+
+
+csvWriter('MonthPOV1_Stores_Total_Rollup.txt').withCloseable() { outputFileRows ->
+
+MonthPOV1_Stores_Total_Rollup.each{inputrows ->
+
+       outputFileRows.writeNext(inputrows)
+    
+    }
+
+}
+
+csvWriter('MonthPOV1_Ecomm_Total_Rollup.txt').withCloseable() { outputFileRows ->
+
+MonthPOV1_Ecomm_Total_Rollup.each{inputrows ->
+
+       outputFileRows.writeNext(inputrows)
+    
+    }
+
+}
+
+/*Compare the summarized data from the file with data uploaded to MFPPlan*/
+
+/*Compare data for Ecomm between data file and WP*/
+
+ScenarioList.each{ scen ->
+
+if(scen.equals('Actual'))
+{
+  Version = 'Final'
+}
+else
+{
+  Version = 'Working'
+}
+
+println scen
+println Version
+println " I am inside data validation "+scen+' '+Version
+
+    FlexibleDataGridDefinitionBuilder builder1 = cube.flexibleDataGridDefinitionBuilder()
+    builder1.setSuppressMissingRows(true)
+    builder1.setSuppressMissingBlocks(true)
+    builder1.setPov(ActYear, ActMonth,Version, scen, 'eCommerce', 'Month', 'All Seasons')
+    builder1.addColumn('Sales Retail','Sales Units','Commission Income','Service Income Retail','Sales Cost','HO Promo MD \$','HO Clearance MD \$','Store Initiated MD \$','Throws \$','Receipts Retail','Receipts Cost','Receipts Units','FC Inv. Cost','FC Inv. Units')
+    builder1.addRow(productlist)
+    DataGridDefinition gridDefinition1 = builder1.build()
+    cube.loadGrid(gridDefinition1, false).withCloseable { grid1 ->
+		grid1.dataCellIterator('Sales Retail').each { it ->
+		 
+         
+         
+           MonthPOV1_Ecomm_Total_Rollup.each{inputrows ->
+      if(!inputrows.split("\\|")[0].contains("Department"))
+      {
+       
+       if(inputrows.split("\\|")[0].equals(it.getMemberName("Products")))
+       {
+            
+            if((it.Data - inputrows.split("\\|")[7].toDouble()).round() != 0)
+            {
+              if(it.getMemberName("Scenarios").equals('Actual') && (it.getMemberName("Metrics").equals('FC Inv. Cost') || it.getMemberName("Metrics").equals('FC Inv. Units')) )
+              {
+              issuelog+=1
+              }
+              MonthValidationIssue.add(inputrows.split("\\|")[0]+'|'+inputrows.split("\\|")[1]+'|'+inputrows.split("\\|")[2]+'|'+inputrows.split("\\|")[3]+'|'+inputrows.split("\\|")[4]+'|'+inputrows.split("\\|")[5]+'|'+inputrows.split("\\|")[6]+'|'+'Sales Retail'+'|'+inputrows.split("\\|")[7]+'|'+it.Data+'|'+'Data does not match between file and '+scen+' scenario of MFP')
+            }
+            
+             if((it.crossDimCell('Sales Units').getData() - inputrows.split("\\|")[8].toDouble()).round() != 0)
+            {
+              if(it.getMemberName("Scenarios").equals('Actual') && (it.getMemberName("Metrics").equals('FC Inv. Cost') || it.getMemberName("Metrics").equals('FC Inv. Units')) )
+              {
+              issuelog+=1
+              }
+              MonthValidationIssue.add(inputrows.split("\\|")[0]+'|'+inputrows.split("\\|")[1]+'|'+inputrows.split("\\|")[2]+'|'+inputrows.split("\\|")[3]+'|'+inputrows.split("\\|")[4]+'|'+inputrows.split("\\|")[5]+'|'+inputrows.split("\\|")[6]+'|'+'Sales Units'+'|'+inputrows.split("\\|")[8]+'|'+it.crossDimCell('Sales Units').getData()+'|'+'Data does not match between file and '+scen+' scenario of MFP')
+            }
+            
+             if((it.crossDimCell('Commission Income').getData() - inputrows.split("\\|")[9].toDouble()).round() != 0)
+            {
+              if(it.getMemberName("Scenarios").equals('Actual') && (it.getMemberName("Metrics").equals('FC Inv. Cost') || it.getMemberName("Metrics").equals('FC Inv. Units')) )
+              {
+              issuelog+=1
+              }
+              MonthValidationIssue.add(inputrows.split("\\|")[0]+'|'+inputrows.split("\\|")[1]+'|'+inputrows.split("\\|")[2]+'|'+inputrows.split("\\|")[3]+'|'+inputrows.split("\\|")[4]+'|'+inputrows.split("\\|")[5]+'|'+inputrows.split("\\|")[6]+'|'+'Commission Income'+'|'+inputrows.split("\\|")[9]+'|'+it.crossDimCell('Commission Income').getData()+'|'+'Data does not match between file and '+scen+' scenario of MFP')
+            }
+            
+             if((it.crossDimCell('Service Income Retail').getData() - inputrows.split("\\|")[10].toDouble()).round() != 0)
+            {
+              if(it.getMemberName("Scenarios").equals('Actual') && (it.getMemberName("Metrics").equals('FC Inv. Cost') || it.getMemberName("Metrics").equals('FC Inv. Units')) )
+              {
+              issuelog+=1
+              }
+              MonthValidationIssue.add(inputrows.split("\\|")[0]+'|'+inputrows.split("\\|")[1]+'|'+inputrows.split("\\|")[2]+'|'+inputrows.split("\\|")[3]+'|'+inputrows.split("\\|")[4]+'|'+inputrows.split("\\|")[5]+'|'+inputrows.split("\\|")[6]+'|'+'Service Income Retail'+'|'+inputrows.split("\\|")[10]+'|'+it.crossDimCell('Service Income Retail').getData()+'|'+'Data does not match between file and '+scen+' scenario of MFP')
+            }
+            
+             if((it.crossDimCell('Sales Cost').getData() - inputrows.split("\\|")[11].toDouble()).round() != 0)
+            {
+              if(it.getMemberName("Scenarios").equals('Actual') && (it.getMemberName("Metrics").equals('FC Inv. Cost') || it.getMemberName("Metrics").equals('FC Inv. Units')) )
+              {
+              issuelog+=1
+              }
+              MonthValidationIssue.add(inputrows.split("\\|")[0]+'|'+inputrows.split("\\|")[1]+'|'+inputrows.split("\\|")[2]+'|'+inputrows.split("\\|")[3]+'|'+inputrows.split("\\|")[4]+'|'+inputrows.split("\\|")[5]+'|'+inputrows.split("\\|")[6]+'|'+'Sales Cost'+'|'+inputrows.split("\\|")[11]+'|'+it.crossDimCell('Sales Cost').getData()+'|'+'Data does not match between file and '+scen+' scenario of MFP')
+            }
+            
+             if((it.crossDimCell('HO Promo MD \$').getData() - inputrows.split("\\|")[12].toDouble()).round() != 0)
+            {
+              if(it.getMemberName("Scenarios").equals('Actual') && (it.getMemberName("Metrics").equals('FC Inv. Cost') || it.getMemberName("Metrics").equals('FC Inv. Units')) )
+              {
+              issuelog+=1
+              }
+              MonthValidationIssue.add(inputrows.split("\\|")[0]+'|'+inputrows.split("\\|")[1]+'|'+inputrows.split("\\|")[2]+'|'+inputrows.split("\\|")[3]+'|'+inputrows.split("\\|")[4]+'|'+inputrows.split("\\|")[5]+'|'+inputrows.split("\\|")[6]+'|'+'HO Promo MD \$'+'|'+inputrows.split("\\|")[12]+'|'+it.crossDimCell('HO Promo MD \$').getData()+'|'+'Data does not match between file and '+scen+' scenario of MFP')
+            }
+            
+            if((it.crossDimCell('HO Clearance MD \$').getData() - inputrows.split("\\|")[13].toDouble()).round() != 0)
+            {
+              if(it.getMemberName("Scenarios").equals('Actual') && (it.getMemberName("Metrics").equals('FC Inv. Cost') || it.getMemberName("Metrics").equals('FC Inv. Units')) )
+              {
+              issuelog+=1
+              }
+              MonthValidationIssue.add(inputrows.split("\\|")[0]+'|'+inputrows.split("\\|")[1]+'|'+inputrows.split("\\|")[2]+'|'+inputrows.split("\\|")[3]+'|'+inputrows.split("\\|")[4]+'|'+inputrows.split("\\|")[5]+'|'+inputrows.split("\\|")[6]+'|'+'HO Clearance MD \$'+'|'+inputrows.split("\\|")[13]+'|'+it.crossDimCell('HO Clearance MD \$').getData()+'|'+'Data does not match between file and '+scen+' scenario of MFP')
+            }
+            
+             if((it.crossDimCell('Store Initiated MD \$').getData() - inputrows.split("\\|")[14].toDouble()).round() != 0)
+            {
+              if(it.getMemberName("Scenarios").equals('Actual') && (it.getMemberName("Metrics").equals('FC Inv. Cost') || it.getMemberName("Metrics").equals('FC Inv. Units')) )
+              {
+              issuelog+=1
+              }
+              MonthValidationIssue.add(inputrows.split("\\|")[0]+'|'+inputrows.split("\\|")[1]+'|'+inputrows.split("\\|")[2]+'|'+inputrows.split("\\|")[3]+'|'+inputrows.split("\\|")[4]+'|'+inputrows.split("\\|")[5]+'|'+inputrows.split("\\|")[6]+'|'+'Store Initiated MD \$'+'|'+inputrows.split("\\|")[14]+'|'+it.crossDimCell('Store Initiated MD \$').getData()+'|'+'Data does not match between file and '+scen+' scenario of MFP')
+            }
+            
+            if((it.crossDimCell('Throws \$').getData() - inputrows.split("\\|")[15].toDouble()).round() != 0)
+            {
+              if(it.getMemberName("Scenarios").equals('Actual') && (it.getMemberName("Metrics").equals('FC Inv. Cost') || it.getMemberName("Metrics").equals('FC Inv. Units')) )
+              {
+              issuelog+=1
+              }
+              MonthValidationIssue.add(inputrows.split("\\|")[0]+'|'+inputrows.split("\\|")[1]+'|'+inputrows.split("\\|")[2]+'|'+inputrows.split("\\|")[3]+'|'+inputrows.split("\\|")[4]+'|'+inputrows.split("\\|")[5]+'|'+inputrows.split("\\|")[6]+'|'+'Throws \$'+'|'+inputrows.split("\\|")[15]+'|'+it.crossDimCell('Throws \$').getData()+'|'+'Data does not match between file and '+scen+' scenario of MFP')
+            }
+            
+             if((it.crossDimCell('Receipts Retail').getData() - inputrows.split("\\|")[16].toDouble()).round() != 0)
+            {
+              if(it.getMemberName("Scenarios").equals('Actual') && (it.getMemberName("Metrics").equals('FC Inv. Cost') || it.getMemberName("Metrics").equals('FC Inv. Units')) )
+              {
+              issuelog+=1
+              }
+              MonthValidationIssue.add(inputrows.split("\\|")[0]+'|'+inputrows.split("\\|")[1]+'|'+inputrows.split("\\|")[2]+'|'+inputrows.split("\\|")[3]+'|'+inputrows.split("\\|")[4]+'|'+inputrows.split("\\|")[5]+'|'+inputrows.split("\\|")[6]+'|'+'Receipts Retail'+'|'+inputrows.split("\\|")[16]+'|'+it.crossDimCell('Receipts Retail').getData()+'|'+'Data does not match between file and '+scen+' scenario of MFP')
+            }
+            
+            if((it.crossDimCell('Receipts Cost').getData() - inputrows.split("\\|")[17].toDouble()).round() != 0)
+            {
+              if(it.getMemberName("Scenarios").equals('Actual') && (it.getMemberName("Metrics").equals('FC Inv. Cost') || it.getMemberName("Metrics").equals('FC Inv. Units')) )
+              {
+              issuelog+=1
+              }
+              MonthValidationIssue.add(inputrows.split("\\|")[0]+'|'+inputrows.split("\\|")[1]+'|'+inputrows.split("\\|")[2]+'|'+inputrows.split("\\|")[3]+'|'+inputrows.split("\\|")[4]+'|'+inputrows.split("\\|")[5]+'|'+inputrows.split("\\|")[6]+'|'+'Receipts Cost'+'|'+inputrows.split("\\|")[17]+'|'+it.crossDimCell('Receipts Cost').getData()+'|'+'Data does not match between file and '+scen+' scenario of MFP')
+            }
+            
+             if((it.crossDimCell('Receipts Units').getData() - inputrows.split("\\|")[18].toDouble()).round() != 0)
+            {
+              if(it.getMemberName("Scenarios").equals('Actual') && (it.getMemberName("Metrics").equals('FC Inv. Cost') || it.getMemberName("Metrics").equals('FC Inv. Units')) )
+              {
+              issuelog+=1
+              }
+              MonthValidationIssue.add(inputrows.split("\\|")[0]+'|'+inputrows.split("\\|")[1]+'|'+inputrows.split("\\|")[2]+'|'+inputrows.split("\\|")[3]+'|'+inputrows.split("\\|")[4]+'|'+inputrows.split("\\|")[5]+'|'+inputrows.split("\\|")[6]+'|'+'Receipts Units'+'|'+inputrows.split("\\|")[18]+'|'+it.crossDimCell('Receipts Units').getData()+'|'+'Data does not match between file and '+scen+' scenario of MFP')
+            }
+        
+            if((it.crossDimCell('FC Inv. Cost').getData() - inputrows.split("\\|")[19].toDouble()).round() != 0)
+            {
+              if(it.getMemberName("Scenarios").equals('Actual') && (it.getMemberName("Metrics").equals('FC Inv. Cost') || it.getMemberName("Metrics").equals('FC Inv. Units')) )
+              {
+              issuelog+=1
+              }
+              MonthValidationIssue.add(inputrows.split("\\|")[0]+'|'+inputrows.split("\\|")[1]+'|'+inputrows.split("\\|")[2]+'|'+inputrows.split("\\|")[3]+'|'+inputrows.split("\\|")[4]+'|'+inputrows.split("\\|")[5]+'|'+inputrows.split("\\|")[6]+'|'+'FC Inv. Cost'+'|'+inputrows.split("\\|")[19]+'|'+it.crossDimCell('FC Inv. Cost').getData()+'|'+'Data does not match between file and '+scen+' scenario of MFP')
+            }
+            
+            if((it.crossDimCell('FC Inv. Units').getData() - inputrows.split("\\|")[20].toDouble()).round() != 0)
+            {
+              if(it.getMemberName("Scenarios").equals('Actual') && (it.getMemberName("Metrics").equals('FC Inv. Cost') || it.getMemberName("Metrics").equals('FC Inv. Units')) )
+              {
+              issuelog+=1
+              }
+              MonthValidationIssue.add(inputrows.split("\\|")[0]+'|'+inputrows.split("\\|")[1]+'|'+inputrows.split("\\|")[2]+'|'+inputrows.split("\\|")[3]+'|'+inputrows.split("\\|")[4]+'|'+inputrows.split("\\|")[5]+'|'+inputrows.split("\\|")[6]+'|'+'FC Inv. Units'+'|'+inputrows.split("\\|")[20]+'|'+it.crossDimCell('FC Inv. Units').getData()+'|'+'Data does not match between file and '+scen+' scenario of MFP')
+            }
+        
+         
+        
+       }
+      } 
+    
+    }
+            			
+   }
+  }
+
+
+
+/*Compare data for All Stores between data file and WP*/
+
+
+FlexibleDataGridDefinitionBuilder builder2 = cube.flexibleDataGridDefinitionBuilder()
+    builder2.setSuppressMissingRows(true)
+    builder2.setSuppressMissingBlocks(true)
+    builder2.setPov(ActYear, ActMonth,Version, scen, 'All Stores', 'Month', 'All Seasons')
+    builder2.addColumn('Sales Retail','Sales Units','Commission Income','Service Income Retail','Sales Cost','HO Promo MD \$','HO Clearance MD \$','Store Initiated MD \$','Throws \$','Receipts Retail','Receipts Cost','Receipts Units','Store EOP PI Retail','Store EOP PI Cost','Store EOP PI Units','DC Inv. Retail','DC Inv. Cost','DC Inv. Units','FC Inv. Cost','FC Inv. Units','Import In-Transit Retail','Domestic In-Transit Retail','Import In-Transit Cost','Domestic In-Transit Cost','Import On-order','Domestic On-order')
+    builder2.addRow(productlist)
+    DataGridDefinition gridDefinition2 = builder2.build()
+    cube.loadGrid(gridDefinition2, false).withCloseable { grid2 ->
+		grid2.dataCellIterator('Sales Retail').each { it ->
+		 
+         
+           MonthPOV1_Stores_Total_Rollup.each{inputrows ->
+      if(!inputrows.split("\\|")[0].contains("Department"))
+      {
+       
+       if(inputrows.split("\\|")[0].equals(it.getMemberName("Products")))
+       {
+            if((it.Data - inputrows.split("\\|")[7].toDouble()).round() != 0)
+            {
+              if(NonCostProductlist.contains(it.getMemberName("Products")))
+              {
+              issuelog+=1
+              }
+              MonthValidationIssue.add(inputrows.split("\\|")[0]+'|'+inputrows.split("\\|")[1]+'|'+inputrows.split("\\|")[2]+'|'+inputrows.split("\\|")[3]+'|'+inputrows.split("\\|")[4]+'|'+inputrows.split("\\|")[5]+'|'+inputrows.split("\\|")[6]+'|'+'Sales Retail'+'|'+inputrows.split("\\|")[7]+'|'+it.Data+'|'+'Data does not match between file and '+scen+' scenario of MFP')
+            }
+            
+             if((it.crossDimCell('Sales Units').getData() - inputrows.split("\\|")[8].toDouble()).round() != 0)
+            {
+               if(NonCostProductlist.contains(it.getMemberName("Products")))
+              {
+              issuelog+=1
+              }
+              MonthValidationIssue.add(inputrows.split("\\|")[0]+'|'+inputrows.split("\\|")[1]+'|'+inputrows.split("\\|")[2]+'|'+inputrows.split("\\|")[3]+'|'+inputrows.split("\\|")[4]+'|'+inputrows.split("\\|")[5]+'|'+inputrows.split("\\|")[6]+'|'+'Sales Units'+'|'+inputrows.split("\\|")[8]+'|'+it.crossDimCell('Sales Units').getData()+'|'+'Data does not match between file and '+scen+' scenario of MFP')
+            }
+            
+             if((it.crossDimCell('Commission Income').getData() - inputrows.split("\\|")[9].toDouble()).round() != 0)
+            {
+               if(NonCostProductlist.contains(it.getMemberName("Products")))
+              {
+              issuelog+=1
+              }
+              MonthValidationIssue.add(inputrows.split("\\|")[0]+'|'+inputrows.split("\\|")[1]+'|'+inputrows.split("\\|")[2]+'|'+inputrows.split("\\|")[3]+'|'+inputrows.split("\\|")[4]+'|'+inputrows.split("\\|")[5]+'|'+inputrows.split("\\|")[6]+'|'+'Commission Income'+'|'+inputrows.split("\\|")[9]+'|'+it.crossDimCell('Commission Income').getData()+'|'+'Data does not match between file and '+scen+' scenario of MFP')
+            }
+            
+             if((it.crossDimCell('Service Income Retail').getData() - inputrows.split("\\|")[10].toDouble()).round() != 0)
+            {
+               if(NonCostProductlist.contains(it.getMemberName("Products")))
+              {
+              issuelog+=1
+              }
+              MonthValidationIssue.add(inputrows.split("\\|")[0]+'|'+inputrows.split("\\|")[1]+'|'+inputrows.split("\\|")[2]+'|'+inputrows.split("\\|")[3]+'|'+inputrows.split("\\|")[4]+'|'+inputrows.split("\\|")[5]+'|'+inputrows.split("\\|")[6]+'|'+'Service Income Retail'+'|'+inputrows.split("\\|")[10]+'|'+it.crossDimCell('Service Income Retail').getData()+'|'+'Data does not match between file and '+scen+' scenario of MFP')
+            }
+            
+             if((it.crossDimCell('Sales Cost').getData() - inputrows.split("\\|")[11].toDouble()).round() != 0)
+            {
+               if(NonCostProductlist.contains(it.getMemberName("Products")))
+              {
+              issuelog+=1
+              }
+              MonthValidationIssue.add(inputrows.split("\\|")[0]+'|'+inputrows.split("\\|")[1]+'|'+inputrows.split("\\|")[2]+'|'+inputrows.split("\\|")[3]+'|'+inputrows.split("\\|")[4]+'|'+inputrows.split("\\|")[5]+'|'+inputrows.split("\\|")[6]+'|'+'Sales Cost'+'|'+inputrows.split("\\|")[11]+'|'+it.crossDimCell('Sales Cost').getData()+'|'+'Data does not match between file and '+scen+' scenario of MFP')
+            }
+            
+             if((it.crossDimCell('HO Promo MD \$').getData() - inputrows.split("\\|")[12].toDouble()).round() != 0)
+            {
+               if(NonCostProductlist.contains(it.getMemberName("Products")))
+              {
+              issuelog+=1
+              }
+              MonthValidationIssue.add(inputrows.split("\\|")[0]+'|'+inputrows.split("\\|")[1]+'|'+inputrows.split("\\|")[2]+'|'+inputrows.split("\\|")[3]+'|'+inputrows.split("\\|")[4]+'|'+inputrows.split("\\|")[5]+'|'+inputrows.split("\\|")[6]+'|'+'HO Promo MD \$'+'|'+inputrows.split("\\|")[12]+'|'+it.crossDimCell('HO Promo MD \$').getData()+'|'+'Data does not match between file and '+scen+' scenario of MFP')
+            }
+            
+            if((it.crossDimCell('HO Clearance MD \$').getData() - inputrows.split("\\|")[13].toDouble()).round() != 0)
+            {
+              if(NonCostProductlist.contains(it.getMemberName("Products")))
+              {
+              issuelog+=1
+              }
+              MonthValidationIssue.add(inputrows.split("\\|")[0]+'|'+inputrows.split("\\|")[1]+'|'+inputrows.split("\\|")[2]+'|'+inputrows.split("\\|")[3]+'|'+inputrows.split("\\|")[4]+'|'+inputrows.split("\\|")[5]+'|'+inputrows.split("\\|")[6]+'|'+'HO Clearance MD \$'+'|'+inputrows.split("\\|")[13]+'|'+it.crossDimCell('HO Clearance MD \$').getData()+'|'+'Data does not match between file and '+scen+' scenario of MFP')
+            }
+            
+             if((it.crossDimCell('Store Initiated MD \$').getData() - inputrows.split("\\|")[14].toDouble()).round() != 0)
+            {
+              if(NonCostProductlist.contains(it.getMemberName("Products")))
+              {
+              issuelog+=1
+              }
+              MonthValidationIssue.add(inputrows.split("\\|")[0]+'|'+inputrows.split("\\|")[1]+'|'+inputrows.split("\\|")[2]+'|'+inputrows.split("\\|")[3]+'|'+inputrows.split("\\|")[4]+'|'+inputrows.split("\\|")[5]+'|'+inputrows.split("\\|")[6]+'|'+'Store Initiated MD \$'+'|'+inputrows.split("\\|")[14]+'|'+it.crossDimCell('Store Initiated MD \$').getData()+'|'+'Data does not match between file and '+scen+' scenario of MFP')
+            }
+            
+            if((it.crossDimCell('Throws \$').getData() - inputrows.split("\\|")[15].toDouble()).round() != 0)
+            {
+              if(NonCostProductlist.contains(it.getMemberName("Products")))
+              {
+              issuelog+=1
+              }
+              MonthValidationIssue.add(inputrows.split("\\|")[0]+'|'+inputrows.split("\\|")[1]+'|'+inputrows.split("\\|")[2]+'|'+inputrows.split("\\|")[3]+'|'+inputrows.split("\\|")[4]+'|'+inputrows.split("\\|")[5]+'|'+inputrows.split("\\|")[6]+'|'+'Throws \$'+'|'+inputrows.split("\\|")[15]+'|'+it.crossDimCell('Throws \$').getData()+'|'+'Data does not match between file and '+scen+' scenario of MFP')
+            }
+            
+             if((it.crossDimCell('Receipts Retail').getData() - inputrows.split("\\|")[16].toDouble()).round() != 0)
+            {
+              if(NonCostProductlist.contains(it.getMemberName("Products")))
+              {
+              issuelog+=1
+              }
+              MonthValidationIssue.add(inputrows.split("\\|")[0]+'|'+inputrows.split("\\|")[1]+'|'+inputrows.split("\\|")[2]+'|'+inputrows.split("\\|")[3]+'|'+inputrows.split("\\|")[4]+'|'+inputrows.split("\\|")[5]+'|'+inputrows.split("\\|")[6]+'|'+'Receipts Retail'+'|'+inputrows.split("\\|")[16]+'|'+it.crossDimCell('Receipts Retail').getData()+'|'+'Data does not match between file and '+scen+' scenario of MFP')
+            }
+            
+            if((it.crossDimCell('Receipts Cost').getData() - inputrows.split("\\|")[17].toDouble()).round() != 0)
+            {
+              if(NonCostProductlist.contains(it.getMemberName("Products")))
+              {
+              issuelog+=1
+              }
+              MonthValidationIssue.add(inputrows.split("\\|")[0]+'|'+inputrows.split("\\|")[1]+'|'+inputrows.split("\\|")[2]+'|'+inputrows.split("\\|")[3]+'|'+inputrows.split("\\|")[4]+'|'+inputrows.split("\\|")[5]+'|'+inputrows.split("\\|")[6]+'|'+'Receipts Cost'+'|'+inputrows.split("\\|")[17]+'|'+it.crossDimCell('Receipts Cost').getData()+'|'+'Data does not match between file and '+scen+' scenario of MFP')
+            }
+            
+             if((it.crossDimCell('Receipts Units').getData() - inputrows.split("\\|")[18].toDouble()).round() != 0)
+            {
+              if(NonCostProductlist.contains(it.getMemberName("Products")))
+              {
+              issuelog+=1
+              }
+              MonthValidationIssue.add(inputrows.split("\\|")[0]+'|'+inputrows.split("\\|")[1]+'|'+inputrows.split("\\|")[2]+'|'+inputrows.split("\\|")[3]+'|'+inputrows.split("\\|")[4]+'|'+inputrows.split("\\|")[5]+'|'+inputrows.split("\\|")[6]+'|'+'Receipts Units'+'|'+inputrows.split("\\|")[18]+'|'+it.crossDimCell('Receipts Units').getData()+'|'+'Data does not match between file and '+scen+' scenario of MFP')
+            }
+        
+            if((it.crossDimCell('Store EOP PI Retail').getData() - inputrows.split("\\|")[19].toDouble()).round() != 0)
+            {
+              if(NonCostProductlist.contains(it.getMemberName("Products")))
+              {
+              issuelog+=1
+              }
+              MonthValidationIssue.add(inputrows.split("\\|")[0]+'|'+inputrows.split("\\|")[1]+'|'+inputrows.split("\\|")[2]+'|'+inputrows.split("\\|")[3]+'|'+inputrows.split("\\|")[4]+'|'+inputrows.split("\\|")[5]+'|'+inputrows.split("\\|")[6]+'|'+'Store EOP PI Retail'+'|'+inputrows.split("\\|")[19]+'|'+it.crossDimCell('Store EOP PI Retail').getData()+'|'+'Data does not match between file and '+scen+' scenario of MFP')
+            }
+            
+            if((it.crossDimCell('Store EOP PI Cost').getData() - inputrows.split("\\|")[20].toDouble()).round() != 0)
+            {
+              if(NonCostProductlist.contains(it.getMemberName("Products")))
+              {
+              issuelog+=1
+              }
+              MonthValidationIssue.add(inputrows.split("\\|")[0]+'|'+inputrows.split("\\|")[1]+'|'+inputrows.split("\\|")[2]+'|'+inputrows.split("\\|")[3]+'|'+inputrows.split("\\|")[4]+'|'+inputrows.split("\\|")[5]+'|'+inputrows.split("\\|")[6]+'|'+'Store EOP PI Cost'+'|'+inputrows.split("\\|")[20]+'|'+it.crossDimCell('Store EOP PI Cost').getData()+'|'+'Data does not match between file and '+scen+' scenario of MFP')
+            }
+            
+            if((it.crossDimCell('Store EOP PI Units').getData() - inputrows.split("\\|")[21].toDouble()).round() != 0)
+            {
+              if(NonCostProductlist.contains(it.getMemberName("Products")))
+              {
+              issuelog+=1
+              }
+              MonthValidationIssue.add(inputrows.split("\\|")[0]+'|'+inputrows.split("\\|")[1]+'|'+inputrows.split("\\|")[2]+'|'+inputrows.split("\\|")[3]+'|'+inputrows.split("\\|")[4]+'|'+inputrows.split("\\|")[5]+'|'+inputrows.split("\\|")[6]+'|'+'Store EOP PI Units'+'|'+inputrows.split("\\|")[21]+'|'+it.crossDimCell('Store EOP PI Units').getData()+'|'+'Data does not match between file and '+scen+' scenario of MFP')
+            }
+        
+            if((it.crossDimCell('DC Inv. Retail').getData() - inputrows.split("\\|")[22].toDouble()).round() != 0)
+            {
+              if(NonCostProductlist.contains(it.getMemberName("Products")))
+              {
+              issuelog+=1
+              }
+              MonthValidationIssue.add(inputrows.split("\\|")[0]+'|'+inputrows.split("\\|")[1]+'|'+inputrows.split("\\|")[2]+'|'+inputrows.split("\\|")[3]+'|'+inputrows.split("\\|")[4]+'|'+inputrows.split("\\|")[5]+'|'+inputrows.split("\\|")[6]+'|'+'DC Inv. Retail'+'|'+inputrows.split("\\|")[22]+'|'+it.crossDimCell('DC Inv. Retail').getData()+'|'+'Data does not match between file and '+scen+' scenario of MFP')
+            }
+        
+             if((it.crossDimCell('DC Inv. Cost').getData() - inputrows.split("\\|")[23].toDouble()).round() != 0)
+            {
+              if(NonCostProductlist.contains(it.getMemberName("Products")))
+              {
+              issuelog+=1
+              }
+              MonthValidationIssue.add(inputrows.split("\\|")[0]+'|'+inputrows.split("\\|")[1]+'|'+inputrows.split("\\|")[2]+'|'+inputrows.split("\\|")[3]+'|'+inputrows.split("\\|")[4]+'|'+inputrows.split("\\|")[5]+'|'+inputrows.split("\\|")[6]+'|'+'DC Inv. Cost'+'|'+inputrows.split("\\|")[23]+'|'+it.crossDimCell('DC Inv. Cost').getData()+'|'+'Data does not match between file and '+scen+' scenario of MFP')
+            }
+            
+             if((it.crossDimCell('DC Inv. Units').getData() - inputrows.split("\\|")[24].toDouble()).round() != 0)
+            {
+              if(NonCostProductlist.contains(it.getMemberName("Products")))
+              {
+              issuelog+=1
+              }
+              MonthValidationIssue.add(inputrows.split("\\|")[0]+'|'+inputrows.split("\\|")[1]+'|'+inputrows.split("\\|")[2]+'|'+inputrows.split("\\|")[3]+'|'+inputrows.split("\\|")[4]+'|'+inputrows.split("\\|")[5]+'|'+inputrows.split("\\|")[6]+'|'+'DC Inv. Units'+'|'+inputrows.split("\\|")[24]+'|'+it.crossDimCell('DC Inv. Units').getData()+'|'+'Data does not match between file and '+scen+' scenario of MFP')
+            }
+            
+            if((it.crossDimCell('FC Inv. Cost').getData() - inputrows.split("\\|")[25].toDouble()).round() != 0)
+            {
+              if(NonCostProductlist.contains(it.getMemberName("Products")))
+              {
+              issuelog+=1
+              }
+              MonthValidationIssue.add(inputrows.split("\\|")[0]+'|'+inputrows.split("\\|")[1]+'|'+inputrows.split("\\|")[2]+'|'+inputrows.split("\\|")[3]+'|'+inputrows.split("\\|")[4]+'|'+inputrows.split("\\|")[5]+'|'+inputrows.split("\\|")[6]+'|'+'FC Inv. Cost'+'|'+inputrows.split("\\|")[25]+'|'+it.crossDimCell('FC Inv. Cost').getData()+'|'+'Data does not match between file and '+scen+' scenario of MFP')
+            }
+            
+             if((it.crossDimCell('FC Inv. Units').getData() - inputrows.split("\\|")[26].toDouble()).round() != 0)
+            {
+              if(NonCostProductlist.contains(it.getMemberName("Products")))
+              {
+              issuelog+=1
+              }
+              MonthValidationIssue.add(inputrows.split("\\|")[0]+'|'+inputrows.split("\\|")[1]+'|'+inputrows.split("\\|")[2]+'|'+inputrows.split("\\|")[3]+'|'+inputrows.split("\\|")[4]+'|'+inputrows.split("\\|")[5]+'|'+inputrows.split("\\|")[6]+'|'+'FC Inv. Units'+'|'+inputrows.split("\\|")[26]+'|'+it.crossDimCell('FC Inv. Units').getData()+'|'+'Data does not match between file and '+scen+' scenario of MFP')
+            }
+            
+            if((it.crossDimCell('Import In-Transit Retail').getData() - inputrows.split("\\|")[27].toDouble()).round() != 0)
+            {
+              if(NonCostProductlist.contains(it.getMemberName("Products")))
+              {
+              issuelog+=1
+              }
+              MonthValidationIssue.add(inputrows.split("\\|")[0]+'|'+inputrows.split("\\|")[1]+'|'+inputrows.split("\\|")[2]+'|'+inputrows.split("\\|")[3]+'|'+inputrows.split("\\|")[4]+'|'+inputrows.split("\\|")[5]+'|'+inputrows.split("\\|")[6]+'|'+'Import In-Transit Retail'+'|'+inputrows.split("\\|")[27]+'|'+it.crossDimCell('Import In-Transit Retail').getData()+'|'+'Data does not match between file and '+scen+' scenario of MFP')
+            }
+            
+            if((it.crossDimCell('Domestic In-Transit Retail').getData() - inputrows.split("\\|")[28].toDouble()).round() != 0)
+            {
+              if(NonCostProductlist.contains(it.getMemberName("Products")))
+              {
+              issuelog+=1
+              }
+              MonthValidationIssue.add(inputrows.split("\\|")[0]+'|'+inputrows.split("\\|")[1]+'|'+inputrows.split("\\|")[2]+'|'+inputrows.split("\\|")[3]+'|'+inputrows.split("\\|")[4]+'|'+inputrows.split("\\|")[5]+'|'+inputrows.split("\\|")[6]+'|'+'Domestic In-Transit Retail'+'|'+inputrows.split("\\|")[28]+'|'+it.crossDimCell('Domestic In-Transit Retail').getData()+'|'+'Data does not match between file and '+scen+' scenario of MFP')
+            }
+            
+             if((it.crossDimCell('Import In-Transit Cost').getData() - inputrows.split("\\|")[29].toDouble()).round() != 0)
+            {
+              if(NonCostProductlist.contains(it.getMemberName("Products")))
+              {
+              issuelog+=1
+              }
+              MonthValidationIssue.add(inputrows.split("\\|")[0]+'|'+inputrows.split("\\|")[1]+'|'+inputrows.split("\\|")[2]+'|'+inputrows.split("\\|")[3]+'|'+inputrows.split("\\|")[4]+'|'+inputrows.split("\\|")[5]+'|'+inputrows.split("\\|")[6]+'|'+'Import In-Transit Cost'+'|'+inputrows.split("\\|")[29]+'|'+it.crossDimCell('Import In-Transit Cost').getData()+'|'+'Data does not match between file and '+scen+' scenario of MFP')
+            }
+            
+             if((it.crossDimCell('Domestic In-Transit Cost').getData() - inputrows.split("\\|")[30].toDouble()).round() != 0)
+            {
+              if(NonCostProductlist.contains(it.getMemberName("Products")))
+              {
+              issuelog+=1
+              }
+              MonthValidationIssue.add(inputrows.split("\\|")[0]+'|'+inputrows.split("\\|")[1]+'|'+inputrows.split("\\|")[2]+'|'+inputrows.split("\\|")[3]+'|'+inputrows.split("\\|")[4]+'|'+inputrows.split("\\|")[5]+'|'+inputrows.split("\\|")[6]+'|'+'Domestic In-Transit Cost'+'|'+inputrows.split("\\|")[30]+'|'+it.crossDimCell('Domestic In-Transit Cost').getData()+'|'+'Data does not match between file and '+scen+' scenario of MFP')
+            }
+            
+            if((it.crossDimCell('Import On-order').getData() - inputrows.split("\\|")[31].toDouble()).round() != 0)
+            {
+              if(NonCostProductlist.contains(it.getMemberName("Products")))
+              {
+              issuelog+=1
+              }
+              MonthValidationIssue.add(inputrows.split("\\|")[0]+'|'+inputrows.split("\\|")[1]+'|'+inputrows.split("\\|")[2]+'|'+inputrows.split("\\|")[3]+'|'+inputrows.split("\\|")[4]+'|'+inputrows.split("\\|")[5]+'|'+inputrows.split("\\|")[6]+'|'+'Import On-order'+'|'+inputrows.split("\\|")[31]+'|'+it.crossDimCell('Import On-order').getData()+'|'+'Data does not match between file and '+scen+' scenario of MFP')
+            }
+            
+             if((it.crossDimCell('Domestic On-order').getData() - inputrows.split("\\|")[32].toDouble()).round() != 0)
+            {
+              if(NonCostProductlist.contains(it.getMemberName("Products")))
+              {
+              issuelog+=1
+              }
+              MonthValidationIssue.add(inputrows.split("\\|")[0]+'|'+inputrows.split("\\|")[1]+'|'+inputrows.split("\\|")[2]+'|'+inputrows.split("\\|")[3]+'|'+inputrows.split("\\|")[4]+'|'+inputrows.split("\\|")[5]+'|'+inputrows.split("\\|")[6]+'|'+'Domestic On-order'+'|'+inputrows.split("\\|")[32]+'|'+it.crossDimCell('Domestic On-order').getData()+'|'+'Data does not match between file and '+scen+' scenario of MFP')
+            }
+        
+        
+        
+        
+        
+       }
+      } 
+    
+    }
+            			
+   }
+  }
+
+ }
+
+
+
+csvWriter('MonthEnd_Validation_Report_DataFile.txt').withCloseable() { outputFileRows ->
+
+MonthValidationIssue.each{inputrows ->
+
+       outputFileRows.writeNext(inputrows)
+       
+    }
+
+}
+
+/*Compare Metrics between MFPPlan and MrchPrft cubes for Non Cost Departments*/
+
+ FlexibleDataGridDefinitionBuilder builder3 = cube.flexibleDataGridDefinitionBuilder()
+   
+    builder3.setPov(ActYear, ActMonth,'WP','All Seasons', 'Working','Month','All Stores')
+    builder3.addColumn('Total Sales Retail','Receipts Retail','Receipts Cost','COGS','MF Merch Profit \$','Merch Profit %','Freight \$','Total MD \$','TTL Deals \$','TTL Margin \$','Store MF Inv. Cost','Store MF Inv. Cost BOP','Store MF Inv. Retail','Store MF Inv. Retail BOP','Store MF Inv. Retail YE Adj','Shrink Retail $','Reserve $','Reserve Closing balance','Cost Complement')
+    builder3.addRow(NonCostProductlist)
+    DataGridDefinition gridDefinition3 = builder3.build()
+    cube.loadGrid(gridDefinition3, false).withCloseable { grid3 ->
+		grid3.dataCellIterator().each { cell3 ->
+			 
+                        
+             /*Compare WP with Actuals Scenario*/
+             
+             FlexibleDataGridDefinitionBuilder builder4 = cube.flexibleDataGridDefinitionBuilder()
+   
+             builder4.setPov(ActYear, ActMonth,'Actual', 'All Seasons', 'Final','Month','All Stores')
+             builder4.addColumn(cell3.getMemberName("Metrics"))
+             builder4.addRow(cell3.getMemberName("Products"))
+             DataGridDefinition gridDefinition4 = builder4.build()
+             cube.loadGrid(gridDefinition4, false).withCloseable { grid4 ->
+		     grid4.dataCellIterator().each { cell4 ->
+             
+              
+                if((cell4.getData() - cell3.getData()).round() != 0)
+                {
+                  issuelog+=1
+                  MonthValidationIssue_WPvsACT.add(cell3.getMemberName("Products")+'|'+cell4.getMemberName("Years")+'|'+cell4.getMemberName("Periods")+'|'+cell4.getMemberName("Seasons")+'|'+cell4.getMemberName("Channel")+'|'+cell4.getMemberName("Scenarios")+'|'+cell4.getMemberName("Versions")+'|'+cell4.getMemberName("Metrics")+'|'+cell3.getData()+'|'+cell4.getData()+'|'+'Data does not match between Actual and WP scenario in MFPPlan')
+                }
+               
+                
+            
+                /*Compare Actual from MFPPlan with MrchPrft cube*/
+             FlexibleDataGridDefinitionBuilder builder14 = cube1.flexibleDataGridDefinitionBuilder()
+   
+             builder14.setPov(ActYear, ActMonth,'Actual','All Seasons', 'Final','All Stores')
+             builder14.addColumn(cell3.getMemberName("Metrics"))
+             builder14.addRow(cell3.getMemberName("Products"))
+             DataGridDefinition gridDefinition14 = builder14.build()
+             cube1.loadGrid(gridDefinition14, false).withCloseable { grid14 ->
+		     grid14.dataCellIterator().each { cell14 ->
+             
+              
+                if((cell4.getData() - cell14.getData()).round() != 0)
+                {
+                 issuelog+=1
+                 MonthValidationIssue_MFPPlanvsMrchPrft.add(cell3.getMemberName("Products")+'|'+cell14.getMemberName("Years")+'|'+cell14.getMemberName("Periods")+'|'+cell14.getMemberName("Seasons")+'|'+cell14.getMemberName("Channel")+'|'+cell14.getMemberName("Scenarios")+'|'+cell14.getMemberName("Versions")+'|'+cell14.getMemberName("Metrics")+'|'+cell4.getData()+'|'+cell14.getData()+'|'+'Data does not match between MFPPlan and MrchPrft Cubes')
+                
+                }
+                 
+             
+             
+             }
+             }
+             
+             }
+            } 
+            
+           /*Compare WP from MFPPlan with MrchPrft cube*/
+           FlexibleDataGridDefinitionBuilder builder5 = cube1.flexibleDataGridDefinitionBuilder()
+   
+             builder5.setPov(ActYear, ActMonth,'WP', 'All Seasons', 'Working','All Stores')
+             builder5.addColumn(cell3.getMemberName("Metrics"))
+             builder5.addRow(cell3.getMemberName("Products"))
+             DataGridDefinition gridDefinition5 = builder5.build()
+             cube1.loadGrid(gridDefinition5, false).withCloseable { grid5 ->
+		     grid5.dataCellIterator().each { cell5 ->
+             
+             
+                if((cell5.getData() - cell3.getData()).round() != 0)
+                {
+                  issuelog+=1
+                  MonthValidationIssue_MFPPlanvsMrchPrft.add(cell3.getMemberName("Products")+'|'+cell5.getMemberName("Years")+'|'+cell5.getMemberName("Periods")+'|'+cell5.getMemberName("Seasons")+'|'+cell5.getMemberName("Channel")+'|'+cell5.getMemberName("Scenarios")+'|'+cell5.getMemberName("Versions")+'|'+cell5.getMemberName("Metrics")+'|'+cell3.getData()+'|'+cell5.getData()+'|'+'Data does not match between MFPPlan and MrchPrft Cubes')
+                }
+            
+              
+             
+                /*Compare WP and Actuals in MrchPrft cube*/
+                FlexibleDataGridDefinitionBuilder builder6 = cube1.flexibleDataGridDefinitionBuilder()
+   
+                builder6.setPov(ActYear, ActMonth,'Actual','All Seasons', 'Final','All Stores')
+                builder6.addColumn(cell3.getMemberName("Metrics"))
+                builder6.addRow(cell3.getMemberName("Products"))
+                DataGridDefinition gridDefinition6 = builder6.build()
+                cube1.loadGrid(gridDefinition6, false).withCloseable { grid6 ->
+		        grid6.dataCellIterator().each { cell6 ->
+                
+                  if((cell6.getData() - cell5.getData()).round() != 0)
+                {
+                 issuelog+=1
+                  MonthValidationIssue_WPvsACT.add(cell3.getMemberName("Products")+'|'+cell6.getMemberName("Years")+'|'+cell6.getMemberName("Periods")+'|'+cell6.getMemberName("Seasons")+'|'+cell6.getMemberName("Channel")+'|'+cell6.getMemberName("Scenarios")+'|'+cell6.getMemberName("Versions")+'|'+cell6.getMemberName("Metrics")+'|'+cell5.getData()+'|'+cell6.getData()+'|'+'Data does not match between Actual and WP scenario in MrchPrft')
+                }
+                
+                
+                }
+               } 
+                
+             
+             }
+            } 
+			
+		}
+	}
+    
+    
+/*Compare Metrics between MFPPlan and MrchPrft cubes for Cost Departments*/
+
+ FlexibleDataGridDefinitionBuilder builder7 = cube.flexibleDataGridDefinitionBuilder()
+   
+    builder7.setPov(ActYear, ActMonth,'WP', 'All Seasons', 'Working','Month','All Stores')
+    builder7.addColumn('Total Sales Retail','Sales Retail','Receipts Cost','COGS','eCommerce Gross Profit \$','eCommerce Gross Profit %','Sales Cost','TTL Margin \$','Gross Margin \$','TTL Vendor \$','Store MF Inv. Cost','Store MF Inv. Cost BOP','Store MF Inv. Retail','Store MF Inv. Retail BOP','Store MF Inv. Retail YE Adj','Reserve \$','Freight \$','Shrink Retail \$','Throws \$')
+    builder7.addRow(CostProductlist)
+    DataGridDefinition gridDefinition7 = builder7.build()
+    cube.loadGrid(gridDefinition7, false).withCloseable { grid7 ->
+		grid7.dataCellIterator().each { cell7 ->
+			 
+             /*Compare WP with Actuals Scenario*/
+             
+             FlexibleDataGridDefinitionBuilder builder8 = cube.flexibleDataGridDefinitionBuilder()
+   
+             builder8.setPov(ActYear, ActMonth,'Actual','All Seasons', 'Final','Month','All Stores')
+             builder8.addColumn(cell7.getMemberName("Metrics"))
+             builder8.addRow(cell7.getMemberName("Products"))
+             DataGridDefinition gridDefinition8 = builder8.build()
+             cube.loadGrid(gridDefinition8, false).withCloseable { grid8 ->
+		     grid8.dataCellIterator().each { cell8 ->
+             
+                if((cell8.getData() - cell7.getData()).round() != 0)
+                {
+                 if(!cell7.getMemberName("Metrics").equals('COGS'))
+                 {
+                 issuelog+=1
+                 }
+                  MonthValidationIssue_WPvsACT.add(cell7.getMemberName("Products")+'|'+cell8.getMemberName("Years")+'|'+cell8.getMemberName("Periods")+'|'+cell8.getMemberName("Seasons")+'|'+cell8.getMemberName("Channel")+'|'+cell8.getMemberName("Scenarios")+'|'+cell8.getMemberName("Versions")+'|'+cell8.getMemberName("Metrics")+'|'+cell7.getData()+'|'+cell8.getData()+'|'+'Data does not match between Actual and WP scenario in MFPPlan')
+                }
+             
+             }
+            } 
+            
+           /*Compare WP from MFPPlan with MrchPrft cube*/
+           FlexibleDataGridDefinitionBuilder builder9 = cube1.flexibleDataGridDefinitionBuilder()
+   
+             builder9.setPov(ActYear, ActMonth,'WP', 'All Seasons', 'Working','All Stores')
+             builder9.addColumn(cell7.getMemberName("Metrics"))
+             builder9.addRow(cell7.getMemberName("Products"))
+             DataGridDefinition gridDefinition9 = builder9.build()
+             cube1.loadGrid(gridDefinition9, false).withCloseable { grid9 ->
+		     grid9.dataCellIterator().each { cell9 ->
+             
+                if((cell9.getData() - cell7.getData()).round() != 0)
+                {
+                  issuelog+=1
+                  MonthValidationIssue_MFPPlanvsMrchPrft.add(cell7.getMemberName("Products")+'|'+cell9.getMemberName("Years")+'|'+cell9.getMemberName("Periods")+'|'+cell9.getMemberName("Seasons")+'|'+cell9.getMemberName("Channel")+'|'+cell9.getMemberName("Scenarios")+'|'+cell9.getMemberName("Versions")+'|'+cell9.getMemberName("Metrics")+'|'+cell7.getData()+'|'+cell9.getData()+'|'+'Data does not match between MFPPlan and MrchPrft Cubes')
+                }
+                
+                /*Compare WP and Actuals in MrchPrft cube*/
+                FlexibleDataGridDefinitionBuilder builder10 = cube1.flexibleDataGridDefinitionBuilder()
+   
+                builder10.setPov(ActYear, ActMonth,'Actual', 'All Seasons', 'Final','All Stores')
+                builder10.addColumn(cell7.getMemberName("Metrics"))
+                builder10.addRow(cell7.getMemberName("Products"))
+                DataGridDefinition gridDefinition10 = builder10.build()
+                cube1.loadGrid(gridDefinition10, false).withCloseable { grid10 ->
+		        grid10.dataCellIterator().each { cell10 ->
+                
+                  if((cell10.getData() - cell9.getData()).round() != 0)
+                {
+                  issuelog+=1
+                  MonthValidationIssue_WPvsACT.add(cell7.getMemberName("Products")+'|'+cell10.getMemberName("Years")+'|'+cell10.getMemberName("Periods")+'|'+cell10.getMemberName("Seasons")+'|'+cell10.getMemberName("Channel")+'|'+cell10.getMemberName("Scenarios")+'|'+cell10.getMemberName("Versions")+'|'+cell10.getMemberName("Metrics")+'|'+cell9.getData()+'|'+cell10.getData()+'|'+'Data does not match between Actual and WP scenario in MrchPrft')
+                }
+                
+                
+                }
+               } 
+                
+             
+             }
+            } 
+			
+		}
+	}    
+    
+
+/*Compare Metrics between MFPPlan WP and Actual for Ecomm Non Cost Departments*/
+
+def aggmetricslist = ['Total Sales Retail','Sales Retail','Receipts Cost','eCommerce Gross Profit \$','eCommerce Gross Profit %','Sales Cost','TTL Margin \$','Gross Margin \$','TTL Vendor \$','Store MF Inv. Cost','Reserve \$']
+
+ FlexibleDataGridDefinitionBuilder builder11 = cube.flexibleDataGridDefinitionBuilder()
+   
+    builder11.setPov(ActYear, ActMonth,'WP', 'All Seasons', 'Working','Month')
+    builder11.addColumn('Total Sales Retail','Sales Retail','Receipts Cost','COGS','eCommerce Gross Profit \$','eCommerce Gross Profit %','Sales Cost','TTL Margin \$','Gross Margin \$','TTL Vendor \$','Store MF Inv. Cost','Store MF Inv. Cost BOP','Store MF Inv. Retail','Store MF Inv. Retail BOP','Store MF Inv. Retail YE Adj','Reserve \$','Freight \$','Shrink Retail \$','Throws \$')
+    builder11.addRow(NonCostProductlist,'1P','2P','eCommerce')
+    DataGridDefinition gridDefinition11 = builder11.build()
+    cube.loadGrid(gridDefinition11, false).withCloseable { grid11 ->
+		grid11.dataCellIterator().each { cell11 ->
+             
+             println "I am here 1"
+             /*Add 1P and 2P to compare with eCommerce*/
+             if(cell11.getMemberName('Channel').equals('1P') && aggmetricslist.contains(cell11.getMemberName('Metrics')))
+             {
+              if( ((cell11.getData() + cell11.crossDimCell('2P').getData()) - cell11.crossDimCell('eCommerce').getData()).round() != 0)
+               {
+                 if(!cell11.getMemberName('Metrics').equals('eCommerce Gross Profit %'))
+                 {
+                 issuelog+=1
+                 }
+                 MonthValidationIssue_1p2pvsEcomm.add(cell11.getMemberName("Products")+'|'+cell11.getMemberName("Years")+'|'+cell11.getMemberName("Periods")+'|'+cell11.getMemberName("Seasons")+'|'+cell11.getMemberName("Channel")+'|'+cell11.getMemberName("Scenarios")+'|'+cell11.getMemberName("Versions")+'|'+cell11.getMemberName("Metrics")+'|'+cell11.getData()+'|'+cell11.crossDimCell('2P').getData()+'|'+cell11.crossDimCell('eCommerce').getData()+'|'+'Data does not match 1P+2P and eCommerce in MFPPlan')
+               }
+			 }
+             /*Compare WP with Actuals Scenario*/
+             
+             FlexibleDataGridDefinitionBuilder builder12 = cube.flexibleDataGridDefinitionBuilder()
+   
+             builder12.setPov(ActYear, ActMonth,'Actual','All Seasons', 'Final','Month',cell11.getMemberName("Channel"))
+             builder12.addColumn(cell11.getMemberName("Metrics"))
+             builder12.addRow(cell11.getMemberName("Products"))
+             DataGridDefinition gridDefinition12 = builder12.build()
+             cube.loadGrid(gridDefinition12, false).withCloseable { grid12 ->
+		     grid12.dataCellIterator().each { cell12 ->
+                println "I am here 3"
+                if((cell11.getData() - cell12.getData()).round() != 0)
+                {
+                 if(!cell11.getMemberName("Channel").equals('eCommerce'))
+                 {
+                   issuelog+=1
+                 }
+                 MonthValidationIssue_WPvsACT.add(cell11.getMemberName("Products")+'|'+cell12.getMemberName("Years")+'|'+cell12.getMemberName("Periods")+'|'+cell12.getMemberName("Seasons")+'|'+cell12.getMemberName("Channel")+'|'+cell12.getMemberName("Scenarios")+'|'+cell12.getMemberName("Versions")+'|'+cell12.getMemberName("Metrics")+'|'+cell11.getData()+'|'+cell12.getData()+'|'+'Data does not match between Actual and WP scenario in MFPPlan')
+                }
+             
+             }
+            } 
+            
+          } 
+			
+		}
+	    
+            /*Compare 1P, 2P and eCommerce for Actuals Scenario*/
+             
+             FlexibleDataGridDefinitionBuilder builder13 = cube.flexibleDataGridDefinitionBuilder()
+   
+             builder13.setPov(ActYear, ActMonth,'Actual', 'All Seasons', 'Final','Month')
+             builder13.addColumn('Total Sales Retail','Sales Retail','Receipts Cost','COGS','eCommerce Gross Profit \$','eCommerce Gross Profit %','Sales Cost','TTL Margin \$','Gross Margin \$','TTL Vendor \$','Store MF Inv. Cost','Store MF Inv. Cost BOP','Store MF Inv. Retail','Store MF Inv. Retail BOP','Store MF Inv. Retail YE Adj','Reserve \$','Freight \$','Shrink Retail \$','Throws \$')
+             builder13.addRow(NonCostProductlist,'1P','2P','eCommerce')
+             DataGridDefinition gridDefinition13 = builder13.build()
+             cube.loadGrid(gridDefinition13, false).withCloseable { grid13 ->
+		     grid13.dataCellIterator().each { cell13 ->
+             
+                 /*Add 1P and 2P to compare with eCommerce*/
+             if(cell13.getMemberName('Channel').equals('1P') && aggmetricslist.contains(cell13.getMemberName('Metrics')))
+             {
+              if( ((cell13.getData() + cell13.crossDimCell('2P').getData()) - cell13.crossDimCell('eCommerce').getData()).round() != 0)
+               {
+                 /*issuelog+=1*/
+                 MonthValidationIssue_1p2pvsEcomm.add(cell13.getMemberName("Products")+'|'+cell13.getMemberName("Years")+'|'+cell13.getMemberName("Periods")+'|'+cell13.getMemberName("Seasons")+'|'+cell13.getMemberName("Channel")+'|'+cell13.getMemberName("Scenarios")+'|'+cell13.getMemberName("Versions")+'|'+cell13.getMemberName("Metrics")+'|'+cell13.getData()+'|'+cell13.crossDimCell('2P').getData()+'|'+cell13.crossDimCell('eCommerce').getData()+'|'+'Data does not match 1P+2P and eCommerce in MFPPlan')
+               }
+			 }
+             
+             }
+            }   
+            
+            
+   /*Validate Calculations for Profit in MFPPlan and MrchPrft*/
+   
+  FlexibleDataGridDefinitionBuilder builder15 = cube.flexibleDataGridDefinitionBuilder()
+   
+    builder15.setPov(ActYear, ActMonth,'WP','All Seasons', 'Working','Month','All Stores')
+    builder15.addColumn('Total Sales Retail','Receipts Retail','Receipts Cost','COGS','MF Merch Profit \$','Merch Profit %','Freight \$','Total MD \$','TTL Deals \$','TTL Margin \$','Store MF Inv. Cost','Store MF Inv. Cost BOP','Store MF Inv. Retail','Store MF Inv. Retail BOP','Store MF Inv. Retail YE Adj','Shrink Retail $','Reserve $','Reserve Closing balance','Cost Complement')
+    builder15.addRow(NonCostProductlist)
+    DataGridDefinition gridDefinition15 = builder15.build()
+    cube.loadGrid(gridDefinition15, false).withCloseable { grid15 ->
+		grid15.dataCellIterator().each { cell15 ->
+			 
+             /*Compare MF COGS calculation with the MFCOGS in MFPPlan*/
+             if(cell15.getMemberName("Metrics").equals('COGS'))
+             {
+             
+             if( ((cell15.crossDimCell('Store MF Inv. Cost BOP').getData()+cell15.crossDimCell('Receipts Cost').getData()-cell15.crossDimCell('TTL Margin \$').getData()-cell15.crossDimCell('Store MF Inv. Cost').getData()+cell15.crossDimCell('Freight \$').getData()) - cell15.getData()).round() != 0 )
+             {
+                issuelog+=1
+                CalculatedValue = (cell15.crossDimCell('Store MF Inv. Cost BOP').getData()+cell15.crossDimCell('Receipts Cost').getData()-cell15.crossDimCell('TTL Margin \$').getData()-cell15.crossDimCell('Store MF Inv. Cost').getData()+cell15.crossDimCell('Freight \$').getData()).round(2)
+                
+               MonthValidationIssue_CalcCheck.add(cell15.getMemberName("Products")+'|'+cell15.getMemberName("Years")+'|'+cell15.getMemberName("Periods")+'|'+cell15.getMemberName("Seasons")+'|'+cell15.getMemberName("Channel")+'|'+cell15.getMemberName("Scenarios")+'|'+cell15.getMemberName("Versions")+'|'+cell15.getMemberName("Metrics")+'|'+CalculatedValue+'|'+cell15.getData().round(2)+'|'+'Calculate value for COGS does not match with value in MFPPlan')
+               
+             }
+             /*Compare Merch Profit calculation with the MFCOGS in MFPPlan*/
+            
+             
+             if( ((cell15.crossDimCell('Total Sales Retail').getData()-cell15.getData()+cell15.crossDimCell('TTL Deals \$').getData()-cell15.crossDimCell('Shrink Retail $').getData()-cell15.crossDimCell('Reserve $').getData()) - cell15.crossDimCell('MF Merch Profit \$').getData()).round() != 0 )
+             {
+                issuelog+=1
+                CalculatedValue = (cell15.crossDimCell('Total Sales Retail').getData()-cell15.getData()+cell15.crossDimCell('TTL Deals \$').getData()-cell15.crossDimCell('Shrink Retail $').getData()-cell15.crossDimCell('Reserve $').getData()).round(2)
+                
+               MonthValidationIssue_CalcCheck.add(cell15.getMemberName("Products")+'|'+cell15.getMemberName("Years")+'|'+cell15.getMemberName("Periods")+'|'+cell15.getMemberName("Seasons")+'|'+cell15.getMemberName("Channel")+'|'+cell15.getMemberName("Scenarios")+'|'+cell15.getMemberName("Versions")+'|'+'MF Merch Profit \$'+'|'+CalculatedValue+'|'+cell15.crossDimCell('MF Merch Profit \$').getData().round(2)+'|'+'Calculate value for Merch Profit does not match with value in MFPPlan')
+               
+             }
+             }
+          }
+       }   
+    
+
+ FlexibleDataGridDefinitionBuilder builder16 = cube.flexibleDataGridDefinitionBuilder()
+   
+    builder16.setPov(ActYear, ActMonth,'Actual', 'All Seasons', 'Final','Month','All Stores')
+    builder16.addColumn('Total Sales Retail','Receipts Retail','Receipts Cost','COGS','MF Merch Profit \$','Merch Profit %','Freight \$','Total MD \$','TTL Deals \$','TTL Margin \$','Store MF Inv. Cost','Store MF Inv. Cost BOP','Store MF Inv. Retail','Store MF Inv. Retail BOP','Store MF Inv. Retail YE Adj','Shrink Retail $','Reserve $','Reserve Closing balance','Cost Complement')
+    builder16.addRow(NonCostProductlist)
+    DataGridDefinition gridDefinition16 = builder16.build()
+    cube.loadGrid(gridDefinition16, false).withCloseable { grid16 ->
+		grid16.dataCellIterator().each { cell16 ->
+			 
+             /*Compare MF COGS calculation with the MFCOGS in MFPPlan*/
+             if(cell16.getMemberName("Metrics").equals('COGS'))
+             {
+             
+             if( ((cell16.crossDimCell('Store MF Inv. Cost BOP').getData()+cell16.crossDimCell('Receipts Cost').getData()-cell16.crossDimCell('TTL Margin \$').getData()-cell16.crossDimCell('Store MF Inv. Cost').getData()+cell16.crossDimCell('Freight \$').getData()) - cell16.getData()).round() != 0 )
+             {
+                issuelog+=1
+                CalculatedValue = (cell16.crossDimCell('Store MF Inv. Cost BOP').getData()+cell16.crossDimCell('Receipts Cost').getData()-cell16.crossDimCell('TTL Margin \$').getData()-cell16.crossDimCell('Store MF Inv. Cost').getData()+cell16.crossDimCell('Freight \$').getData()).round(2)
+                
+               MonthValidationIssue_CalcCheck.add(cell16.getMemberName("Products")+'|'+cell16.getMemberName("Years")+'|'+cell16.getMemberName("Periods")+'|'+cell16.getMemberName("Seasons")+'|'+cell16.getMemberName("Channel")+'|'+cell16.getMemberName("Scenarios")+'|'+cell16.getMemberName("Versions")+'|'+cell16.getMemberName("Metrics")+'|'+CalculatedValue+'|'+cell16.getData().round(2)+'|'+'Calculate value for COGS does not match with value in MFPPlan')
+               
+             }
+             /*Compare Merch Profit calculation with the MFCOGS in MFPPlan*/
+            
+             
+             if( ((cell16.crossDimCell('Total Sales Retail').getData()-cell16.getData()+cell16.crossDimCell('TTL Deals \$').getData()-cell16.crossDimCell('Shrink Retail $').getData()-cell16.crossDimCell('Reserve $').getData()) - cell16.crossDimCell('MF Merch Profit \$').getData()).round() != 0 )
+             {
+                issuelog+=1
+                CalculatedValue = (cell16.crossDimCell('Total Sales Retail').getData()-cell16.getData()+cell16.crossDimCell('TTL Deals \$').getData()-cell16.crossDimCell('Shrink Retail $').getData()-cell16.crossDimCell('Reserve $').getData()).round(2)
+                
+               MonthValidationIssue_CalcCheck.add(cell16.getMemberName("Products")+'|'+cell16.getMemberName("Years")+'|'+cell16.getMemberName("Periods")+'|'+cell16.getMemberName("Seasons")+'|'+cell16.getMemberName("Channel")+'|'+cell16.getMemberName("Scenarios")+'|'+cell16.getMemberName("Versions")+'|'+'MF Merch Profit \$'+'|'+CalculatedValue+'|'+cell16.crossDimCell('MF Merch Profit \$').getData().round(2)+'|'+'Calculate value for Merch Profit does not match with value in MFPPlan')
+               
+             }
+             }
+          }
+       }   
+    
+  FlexibleDataGridDefinitionBuilder builder17 = cube.flexibleDataGridDefinitionBuilder()
+   
+    builder17.setPov(ActYear, ActMonth,'Actual','All Seasons', 'Final','All Stores')
+    builder17.addColumn('Total Sales Retail','Receipts Retail','Receipts Cost','COGS','MF Merch Profit \$','Merch Profit %','Freight \$','Total MD \$','TTL Deals \$','TTL Margin \$','Store MF Inv. Cost','Store MF Inv. Cost BOP','Store MF Inv. Retail','Store MF Inv. Retail BOP','Store MF Inv. Retail YE Adj','Shrink Retail $','Reserve $','Reserve Closing balance','Cost Complement')
+    builder17.addRow(NonCostProductlist)
+    DataGridDefinition gridDefinition17 = builder17.build()
+    cube1.loadGrid(gridDefinition17, false).withCloseable { grid17 ->
+		grid17.dataCellIterator().each { cell17 ->
+			 
+             /*Compare MF COGS calculation with the MFCOGS in MFPPlan*/
+             if(cell17.getMemberName("Metrics").equals('COGS'))
+             {
+             
+             if( ((cell17.crossDimCell('Store MF Inv. Cost BOP').getData()+cell17.crossDimCell('Receipts Cost').getData()-cell17.crossDimCell('TTL Margin \$').getData()-cell17.crossDimCell('Store MF Inv. Cost').getData()+cell17.crossDimCell('Freight \$').getData()) - cell17.getData()).round() != 0 )
+             {
+                issuelog+=1
+                CalculatedValue = (cell17.crossDimCell('Store MF Inv. Cost BOP').getData()+cell17.crossDimCell('Receipts Cost').getData()-cell17.crossDimCell('TTL Margin \$').getData()-cell17.crossDimCell('Store MF Inv. Cost').getData()+cell17.crossDimCell('Freight \$').getData()).round(2)
+                
+               MonthValidationIssue_CalcCheck.add(cell17.getMemberName("Products")+'|'+cell17.getMemberName("Years")+'|'+cell17.getMemberName("Periods")+'|'+cell17.getMemberName("Seasons")+'|'+cell17.getMemberName("Channel")+'|'+cell17.getMemberName("Scenarios")+'|'+cell17.getMemberName("Versions")+'|'+cell17.getMemberName("Metrics")+'|'+CalculatedValue+'|'+cell17.getData().round(2)+'|'+'Calculate value for COGS does not match with value in MrchPrft')
+               
+             }
+             /*Compare Merch Profit calculation with the MFCOGS in MFPPlan*/
+            
+             
+             if( ((cell17.crossDimCell('Total Sales Retail').getData()-cell17.getData()+cell17.crossDimCell('TTL Deals \$').getData()-cell17.crossDimCell('Shrink Retail $').getData()-cell17.crossDimCell('Reserve $').getData()) - cell17.crossDimCell('MF Merch Profit \$').getData()).round() != 0 )
+             {
+                issuelog+=1
+                CalculatedValue = (cell17.crossDimCell('Total Sales Retail').getData()-cell17.getData()+cell17.crossDimCell('TTL Deals \$').getData()-cell17.crossDimCell('Shrink Retail $').getData()-cell17.crossDimCell('Reserve $').getData()).round(2)
+                
+               MonthValidationIssue_CalcCheck.add(cell17.getMemberName("Products")+'|'+cell17.getMemberName("Years")+'|'+cell17.getMemberName("Periods")+'|'+cell17.getMemberName("Seasons")+'|'+cell17.getMemberName("Channel")+'|'+cell17.getMemberName("Scenarios")+'|'+cell17.getMemberName("Versions")+'|'+'MF Merch Profit \$'+'|'+CalculatedValue+'|'+cell17.crossDimCell('MF Merch Profit \$').getData().round(2)+'|'+'Calculate value for Merch Profit does not match with value in MrchPrft')
+               
+             }
+             }
+          }
+       }   
+      
+   FlexibleDataGridDefinitionBuilder builder18 = cube.flexibleDataGridDefinitionBuilder()
+   
+    builder18.setPov(ActYear, ActMonth,'WP', 'All Seasons', 'Working','All Stores')
+    builder18.addColumn('Total Sales Retail','Receipts Retail','Receipts Cost','COGS','MF Merch Profit \$','Merch Profit %','Freight \$','Total MD \$','TTL Deals \$','TTL Margin \$','Store MF Inv. Cost','Store MF Inv. Cost BOP','Store MF Inv. Retail','Store MF Inv. Retail BOP','Store MF Inv. Retail YE Adj','Shrink Retail $','Reserve $','Reserve Closing balance','Cost Complement')
+    builder18.addRow(NonCostProductlist)
+    DataGridDefinition gridDefinition18 = builder18.build()
+    cube1.loadGrid(gridDefinition18, false).withCloseable { grid18 ->
+		grid18.dataCellIterator().each { cell18 ->
+			 
+             /*Compare MF COGS calculation with the MFCOGS in MFPPlan*/
+            if(cell18.getMemberName("Metrics").contains('COGS'))
+             {  
+                /*Compare MF COGS calculation with the MFCOGS in MrchPrft*/
+               
+             if( ((cell18.crossDimCell('Store MF Inv. Cost BOP').getData()+cell18.crossDimCell('Receipts Cost').getData()-cell18.crossDimCell('TTL Margin \$').getData()-cell18.crossDimCell('Store MF Inv. Cost').getData()+cell18.crossDimCell('Freight \$').getData()) - cell18.getData()).round() != 0 )
+             {
+                issuelog+=1
+                CalculatedValue = (cell18.crossDimCell('Store MF Inv. Cost BOP').getData()+cell18.crossDimCell('Receipts Cost').getData()-cell18.crossDimCell('TTL Margin \$').getData()-cell18.crossDimCell('Store MF Inv. Cost').getData()+cell18.crossDimCell('Freight \$').getData()).round(2)
+                
+               MonthValidationIssue_CalcCheck.add(cell18.getMemberName("Products")+'|'+cell18.getMemberName("Years")+'|'+cell18.getMemberName("Periods")+'|'+cell18.getMemberName("Seasons")+'|'+cell18.getMemberName("Channel")+'|'+cell18.getMemberName("Scenarios")+'|'+cell18.getMemberName("Versions")+'|'+cell18.getMemberName("Metrics")+'|'+CalculatedValue+'|'+cell18.getData().round(2)+'|'+'Calculate value for COGS does not match with value in MrchPrft')
+               
+             }
+             /*Compare Merch Profit calculation with the MFCOGS in MrchPrft*/
+             
+             if( ((cell18.crossDimCell('Total Sales Retail').getData()-cell18.getData()+cell18.crossDimCell('TTL Deals \$').getData()-cell18.crossDimCell('Shrink Retail $').getData()-cell18.crossDimCell('Reserve $').getData()) - cell18.crossDimCell('MF Merch Profit \$').getData()).round() != 0 )
+             {
+                issuelog+=1
+                CalculatedValue = (cell18.crossDimCell('Total Sales Retail').getData()-cell18.getData()+cell18.crossDimCell('TTL Deals \$').getData()-cell18.crossDimCell('Shrink Retail $').getData()-cell18.crossDimCell('Reserve $').getData()).round(2)
+                
+               MonthValidationIssue_CalcCheck.add(cell18.getMemberName("Products")+'|'+cell18.getMemberName("Years")+'|'+cell18.getMemberName("Periods")+'|'+cell18.getMemberName("Seasons")+'|'+cell18.getMemberName("Channel")+'|'+cell18.getMemberName("Scenarios")+'|'+cell18.getMemberName("Versions")+'|'+'MF Merch Profit \$'+'|'+CalculatedValue+'|'+cell18.crossDimCell('MF Merch Profit \$').getData().round(2)+'|'+'Calculate value for Merch Profit does not match with value in MrchPrft')
+               
+             }
+             }   
+          }
+       }      
+
+
+ FlexibleDataGridDefinitionBuilder builder19 = cube.flexibleDataGridDefinitionBuilder()
+   
+    builder19.setPov(ActYear, ActMonth,'WP', 'All Seasons', 'Working','Month','All Stores')
+    builder19.addColumn('Total Sales Retail','Sales Retail','Receipts Cost','COGS','eCommerce Gross Profit \$','eCommerce Gross Profit %','Sales Cost','TTL Margin \$','Gross Margin \$','TTL Vendor \$','Store MF Inv. Cost','Store MF Inv. Cost BOP','Store MF Inv. Retail','Store MF Inv. Retail BOP','Store MF Inv. Retail YE Adj','Reserve \$','Freight \$','Shrink Retail \$','Throws \$')
+    builder19.addRow(CostProductlist)
+    DataGridDefinition gridDefinition19 = builder19.build()
+    cube.loadGrid(gridDefinition19, false).withCloseable { grid19 ->
+		grid19.dataCellIterator().each { cell19 ->
+        
+           /*Compare Total Margin calculation with the Ecomm Gross Profit in MFPPlan*/
+            if(cell19.getMemberName("Metrics").contains('TTL Margin \$'))
+             {  
+                /*Compare Total Margin calculation with the Total Margin in MFPPlan*/
+               
+             if( ((cell19.crossDimCell('Sales Retail').getData()-cell19.crossDimCell('Sales Cost').getData()+cell19.crossDimCell('TTL Vendor \$').getData()) - cell19.getData()).round() != 0 )
+             {
+                issuelog+=1
+                CalculatedValue = (cell19.crossDimCell('Sales Retail').getData()-cell19.crossDimCell('Sales Cost').getData()+cell19.crossDimCell('TTL Vendor \$').getData()).round(2)
+                
+               MonthValidationIssue_CalcCheck.add(cell19.getMemberName("Products")+'|'+cell19.getMemberName("Years")+'|'+cell19.getMemberName("Periods")+'|'+cell19.getMemberName("Seasons")+'|'+cell19.getMemberName("Channel")+'|'+cell19.getMemberName("Scenarios")+'|'+cell19.getMemberName("Versions")+'|'+cell19.getMemberName("Metrics")+'|'+CalculatedValue+'|'+cell19.getData().round(2)+'|'+'Calculate value for Total Margin does not match with value in MFPPlan')
+               
+             }
+             /*Compare Ecomm Cost Gross Profit calculation with the Ecomm Cost Gross Profit in MFPPlan*/
+             
+             if( ((cell19.crossDimCell('Sales Retail').getData()-cell19.crossDimCell('Sales Cost').getData()+cell19.crossDimCell('TTL Vendor \$').getData()-cell19.crossDimCell('Reserve $').getData()-cell19.crossDimCell('Freight \$').getData()-cell19.crossDimCell('Shrink Retail \$').getData()-cell19.crossDimCell('Throws \$').getData()) - cell19.crossDimCell('eCommerce Gross Profit \$').getData()).round() != 0 )
+             {
+                issuelog+=1
+                CalculatedValue = (cell19.crossDimCell('Sales Retail').getData()-cell19.crossDimCell('Sales Cost').getData()+cell19.crossDimCell('TTL Vendor \$').getData()-cell19.crossDimCell('Reserve $').getData()-cell19.crossDimCell('Freight \$').getData()-cell19.crossDimCell('Shrink Retail \$').getData()-cell19.crossDimCell('Throws \$').getData()).round(2)
+                
+               MonthValidationIssue_CalcCheck.add(cell19.getMemberName("Products")+'|'+cell19.getMemberName("Years")+'|'+cell19.getMemberName("Periods")+'|'+cell19.getMemberName("Seasons")+'|'+cell19.getMemberName("Channel")+'|'+cell19.getMemberName("Scenarios")+'|'+cell19.getMemberName("Versions")+'|'+'eCommerce Gross Profit \$'+'|'+CalculatedValue+'|'+cell19.crossDimCell('eCommerce Gross Profit \$').getData().round(2)+'|'+'Calculate value for Cost Gross Profit does not match with value in MFPPlan')
+               
+             }
+             }   
+        
+        
+        }
+       } 
+   
+    FlexibleDataGridDefinitionBuilder builder20 = cube.flexibleDataGridDefinitionBuilder()
+   
+    builder20.setPov(ActYear, ActMonth,'Actual','All Seasons', 'Final','Month','All Stores')
+    builder20.addColumn('Total Sales Retail','Sales Retail','Receipts Cost','COGS','eCommerce Gross Profit \$','eCommerce Gross Profit %','Sales Cost','TTL Margin \$','Gross Margin \$','TTL Vendor \$','Store MF Inv. Cost','Store MF Inv. Cost BOP','Store MF Inv. Retail','Store MF Inv. Retail BOP','Store MF Inv. Retail YE Adj','Reserve \$','Freight \$','Shrink Retail \$','Throws \$')
+    builder20.addRow(CostProductlist)
+    DataGridDefinition gridDefinition20 = builder20.build()
+    cube.loadGrid(gridDefinition20, false).withCloseable { grid20 ->
+		grid20.dataCellIterator().each { cell20 ->
+        
+           /*Compare Total Margin calculation with the Ecomm Gross Profit in MFPPlan*/
+            if(cell20.getMemberName("Metrics").contains('TTL Margin \$'))
+             {  
+                /*Compare Total Margin calculation with the Total Margin in MFPPlan*/
+               
+             if( ((cell20.crossDimCell('Sales Retail').getData()-cell20.crossDimCell('Sales Cost').getData()+cell20.crossDimCell('TTL Vendor \$').getData()) - cell20.getData()).round() != 0 )
+             {
+                issuelog+=1
+                CalculatedValue = (cell20.crossDimCell('Sales Retail').getData()-cell20.crossDimCell('Sales Cost').getData()+cell20.crossDimCell('TTL Vendor \$').getData()).round(2)
+                
+               MonthValidationIssue_CalcCheck.add(cell20.getMemberName("Products")+'|'+cell20.getMemberName("Years")+'|'+cell20.getMemberName("Periods")+'|'+cell20.getMemberName("Seasons")+'|'+cell20.getMemberName("Channel")+'|'+cell20.getMemberName("Scenarios")+'|'+cell20.getMemberName("Versions")+'|'+cell20.getMemberName("Metrics")+'|'+CalculatedValue+'|'+cell20.getData().round(2)+'|'+'Calculate value for Total Margin does not match with value in MFPPlan')
+               
+             }
+             /*Compare Ecomm Cost Gross Profit calculation with the Ecomm Cost Gross Profit in MFPPlan*/
+             
+             if( ((cell20.crossDimCell('Sales Retail').getData()-cell20.crossDimCell('Sales Cost').getData()+cell20.crossDimCell('TTL Vendor \$').getData()-cell20.crossDimCell('Reserve $').getData()-cell20.crossDimCell('Freight \$').getData()-cell20.crossDimCell('Shrink Retail \$').getData()-cell20.crossDimCell('Throws \$').getData()) - cell20.crossDimCell('eCommerce Gross Profit \$').getData()).round() != 0 )
+             {
+                issuelog+=1
+                CalculatedValue = (cell20.crossDimCell('Sales Retail').getData()-cell20.crossDimCell('Sales Cost').getData()+cell20.crossDimCell('TTL Vendor \$').getData()-cell20.crossDimCell('Reserve $').getData()-cell20.crossDimCell('Freight \$').getData()-cell20.crossDimCell('Shrink Retail \$').getData()-cell20.crossDimCell('Throws \$').getData()).round(2)
+                
+               MonthValidationIssue_CalcCheck.add(cell20.getMemberName("Products")+'|'+cell20.getMemberName("Years")+'|'+cell20.getMemberName("Periods")+'|'+cell20.getMemberName("Seasons")+'|'+cell20.getMemberName("Channel")+'|'+cell20.getMemberName("Scenarios")+'|'+cell20.getMemberName("Versions")+'|'+'eCommerce Gross Profit \$'+'|'+CalculatedValue+'|'+cell20.crossDimCell('eCommerce Gross Profit \$').getData().round(2)+'|'+'Calculate value for Cost Gross Profit does not match with value in MFPPlan')
+               
+             }
+             }   
+        
+        
+        }
+       } 
+       
+    FlexibleDataGridDefinitionBuilder builder21 = cube.flexibleDataGridDefinitionBuilder()
+   
+    builder21.setPov(ActYear, ActMonth,'WP', 'All Seasons', 'Working','All Stores')
+    builder21.addColumn('Total Sales Retail','Sales Retail','Receipts Cost','COGS','eCommerce Gross Profit \$','eCommerce Gross Profit %','Sales Cost','TTL Margin \$','Gross Margin \$','TTL Vendor \$','Store MF Inv. Cost','Store MF Inv. Cost BOP','Store MF Inv. Retail','Store MF Inv. Retail BOP','Store MF Inv. Retail YE Adj','Reserve \$','Freight \$','Shrink Retail \$','Throws \$')
+    builder21.addRow(CostProductlist)
+    DataGridDefinition gridDefinition21 = builder21.build()
+    cube1.loadGrid(gridDefinition21, false).withCloseable { grid21 ->
+		grid21.dataCellIterator().each { cell21 ->
+        
+           /*Compare Total Margin calculation with the Ecomm Gross Profit in Mrchprft*/
+            if(cell21.getMemberName("Metrics").contains('TTL Margin \$'))
+             {  
+                /*Compare Total Margin calculation with the Total Margin in Mrchprft*/
+               
+             if( ((cell21.crossDimCell('Sales Retail').getData()-cell21.crossDimCell('Sales Cost').getData()+cell21.crossDimCell('TTL Vendor \$').getData()) - cell21.getData()).round() != 0 )
+             {
+                issuelog+=1
+                CalculatedValue = (cell21.crossDimCell('Sales Retail').getData()-cell21.crossDimCell('Sales Cost').getData()+cell21.crossDimCell('TTL Vendor \$').getData()).round(2)
+                
+               MonthValidationIssue_CalcCheck.add(cell21.getMemberName("Products")+'|'+cell21.getMemberName("Years")+'|'+cell21.getMemberName("Periods")+'|'+cell21.getMemberName("Seasons")+'|'+cell21.getMemberName("Channel")+'|'+cell21.getMemberName("Scenarios")+'|'+cell21.getMemberName("Versions")+'|'+cell21.getMemberName("Metrics")+'|'+CalculatedValue+'|'+cell21.getData().round(2)+'|'+'Calculate value for Total Margin does not match with value in MrchPrft')
+               
+             }
+             /*Compare Ecomm Cost Gross Profit calculation with the Ecomm Cost Gross Profit in Mrchprft*/
+             
+             if( ((cell21.crossDimCell('Sales Retail').getData()-cell21.crossDimCell('Sales Cost').getData()+cell21.crossDimCell('TTL Vendor \$').getData()-cell21.crossDimCell('Reserve $').getData()-cell21.crossDimCell('Freight \$').getData()-cell21.crossDimCell('Shrink Retail \$').getData()-cell21.crossDimCell('Throws \$').getData()) - cell21.crossDimCell('eCommerce Gross Profit \$').getData()).round() != 0 )
+             {
+                issuelog+=1
+                CalculatedValue = (cell21.crossDimCell('Sales Retail').getData()-cell21.crossDimCell('Sales Cost').getData()+cell21.crossDimCell('TTL Vendor \$').getData()-cell21.crossDimCell('Reserve $').getData()-cell21.crossDimCell('Freight \$').getData()-cell21.crossDimCell('Shrink Retail \$').getData()-cell21.crossDimCell('Throws \$').getData()).round(2)
+                
+               MonthValidationIssue_CalcCheck.add(cell21.getMemberName("Products")+'|'+cell21.getMemberName("Years")+'|'+cell21.getMemberName("Periods")+'|'+cell21.getMemberName("Seasons")+'|'+cell21.getMemberName("Channel")+'|'+cell21.getMemberName("Scenarios")+'|'+cell21.getMemberName("Versions")+'|'+'eCommerce Gross Profit \$'+'|'+CalculatedValue+'|'+cell21.crossDimCell('eCommerce Gross Profit \$').getData().round(2)+'|'+'Calculate value for Cost Gross Profit does not match with value in MrchPrft')
+               
+             }
+             }   
+        
+        
+        }
+       }    
+       
+        FlexibleDataGridDefinitionBuilder builder22 = cube.flexibleDataGridDefinitionBuilder()
+   
+    builder22.setPov(ActYear, ActMonth,'Actual','All Seasons', 'Final','All Stores')
+    builder22.addColumn('Total Sales Retail','Sales Retail','Receipts Cost','COGS','eCommerce Gross Profit \$','eCommerce Gross Profit %','Sales Cost','TTL Margin \$','Gross Margin \$','TTL Vendor \$','Store MF Inv. Cost','Store MF Inv. Cost BOP','Store MF Inv. Retail','Store MF Inv. Retail BOP','Store MF Inv. Retail YE Adj','Reserve \$','Freight \$','Shrink Retail \$','Throws \$')
+    builder22.addRow(CostProductlist)
+    DataGridDefinition gridDefinition22 = builder22.build()
+    cube1.loadGrid(gridDefinition22, false).withCloseable { grid22 ->
+		grid22.dataCellIterator().each { cell22 ->
+        
+           /*Compare Total Margin calculation with the Ecomm Gross Profit in Mrchprft*/
+            if(cell22.getMemberName("Metrics").contains('TTL Margin \$'))
+             {  
+                /*Compare Total Margin calculation with the Total Margin in Mrchprft*/
+               
+             if( ((cell22.crossDimCell('Sales Retail').getData()-cell22.crossDimCell('Sales Cost').getData()+cell22.crossDimCell('TTL Vendor \$').getData()) - cell22.getData()).round() != 0 )
+             {
+                issuelog+=1
+                CalculatedValue = (cell22.crossDimCell('Sales Retail').getData()-cell22.crossDimCell('Sales Cost').getData()+cell22.crossDimCell('TTL Vendor \$').getData()).round(2)
+                
+               MonthValidationIssue_CalcCheck.add(cell22.getMemberName("Products")+'|'+cell22.getMemberName("Years")+'|'+cell22.getMemberName("Periods")+'|'+cell22.getMemberName("Seasons")+'|'+cell22.getMemberName("Channel")+'|'+cell22.getMemberName("Scenarios")+'|'+cell22.getMemberName("Versions")+'|'+cell22.getMemberName("Metrics")+'|'+CalculatedValue+'|'+cell22.getData().round(2)+'|'+'Calculate value for Total Margin does not match with value in MrchPrft')
+               
+             }
+             /*Compare Ecomm Cost Gross Profit calculation with the Ecomm Cost Gross Profit in Mrchprft*/
+             
+             if( ((cell22.crossDimCell('Sales Retail').getData()-cell22.crossDimCell('Sales Cost').getData()+cell22.crossDimCell('TTL Vendor \$').getData()-cell22.crossDimCell('Reserve $').getData()-cell22.crossDimCell('Freight \$').getData()-cell22.crossDimCell('Shrink Retail \$').getData()-cell22.crossDimCell('Throws \$').getData()) - cell22.crossDimCell('eCommerce Gross Profit \$').getData()).round() != 0 )
+             {
+                issuelog+=1
+                CalculatedValue = (cell22.crossDimCell('Sales Retail').getData()-cell22.crossDimCell('Sales Cost').getData()+cell22.crossDimCell('TTL Vendor \$').getData()-cell22.crossDimCell('Reserve $').getData()-cell22.crossDimCell('Freight \$').getData()-cell22.crossDimCell('Shrink Retail \$').getData()-cell22.crossDimCell('Throws \$').getData()).round(2)
+                
+               MonthValidationIssue_CalcCheck.add(cell22.getMemberName("Products")+'|'+cell22.getMemberName("Years")+'|'+cell22.getMemberName("Periods")+'|'+cell22.getMemberName("Seasons")+'|'+cell22.getMemberName("Channel")+'|'+cell22.getMemberName("Scenarios")+'|'+cell22.getMemberName("Versions")+'|'+'eCommerce Gross Profit \$'+'|'+CalculatedValue+'|'+cell22.crossDimCell('eCommerce Gross Profit \$').getData().round(2)+'|'+'Calculate value for Cost Gross Profit does not match with value in MrchPrft')
+               
+             }
+             }   
+        
+        
+        }
+       }
+       
+      FlexibleDataGridDefinitionBuilder builder23 = cube.flexibleDataGridDefinitionBuilder()
+   
+    builder23.setPov(ActYear, ActMonth,'WP', 'All Seasons', 'Working','Month')
+    builder23.addColumn('Total Sales Retail','Sales Retail','Receipts Cost','COGS','eCommerce Gross Profit \$','eCommerce Gross Profit %','Sales Cost','TTL Margin \$','Gross Margin \$','TTL Vendor \$','Store MF Inv. Cost','Store MF Inv. Cost BOP','Store MF Inv. Retail','Store MF Inv. Retail BOP','Store MF Inv. Retail YE Adj','Reserve \$','Freight \$','Shrink Retail \$','Throws \$')
+    builder23.addRow(NonCostProductlist,'1P','2P','eCommerce')
+    DataGridDefinition gridDefinition23 = builder23.build()
+    cube.loadGrid(gridDefinition23, false).withCloseable { grid23 ->
+		grid23.dataCellIterator().each { cell23 ->
+        
+           /*Compare Total Margin calculation with the Ecomm Gross Profit in MFPPlan*/
+            if(cell23.getMemberName("Metrics").contains('TTL Margin \$'))
+             {  
+                /*Compare Total Margin calculation with the Total Margin in MFPPlan*/
+               
+             if( ((cell23.crossDimCell('Sales Retail').getData()-cell23.crossDimCell('Sales Cost').getData()+cell23.crossDimCell('TTL Vendor \$').getData()) - cell23.getData()).round() != 0 )
+             {
+                issuelog+=1
+                CalculatedValue = (cell23.crossDimCell('Sales Retail').getData()-cell23.crossDimCell('Sales Cost').getData()+cell23.crossDimCell('TTL Vendor \$').getData()).round(2)
+                
+               MonthValidationIssue_CalcCheck.add(cell23.getMemberName("Products")+'|'+cell23.getMemberName("Years")+'|'+cell23.getMemberName("Periods")+'|'+cell23.getMemberName("Seasons")+'|'+cell23.getMemberName("Channel")+'|'+cell23.getMemberName("Scenarios")+'|'+cell23.getMemberName("Versions")+'|'+cell23.getMemberName("Metrics")+'|'+CalculatedValue+'|'+cell23.getData().round(2)+'|'+'Calculate value for Total Margin does not match with value in MFPPlan')
+               
+             }
+             /*Compare Ecomm Cost Gross Profit calculation with the Ecomm Cost Gross Profit in MFPPlan*/
+             
+             if( ((cell23.crossDimCell('Sales Retail').getData()-cell23.crossDimCell('Sales Cost').getData()+cell23.crossDimCell('TTL Vendor \$').getData()-cell23.crossDimCell('Reserve $').getData()-cell23.crossDimCell('Freight \$').getData()-cell23.crossDimCell('Shrink Retail \$').getData()-cell23.crossDimCell('Throws \$').getData()) - cell23.crossDimCell('eCommerce Gross Profit \$').getData()).round() != 0 )
+             {
+                issuelog+=1
+                CalculatedValue = (cell23.crossDimCell('Sales Retail').getData()-cell23.crossDimCell('Sales Cost').getData()+cell23.crossDimCell('TTL Vendor \$').getData()-cell23.crossDimCell('Reserve $').getData()-cell23.crossDimCell('Freight \$').getData()-cell23.crossDimCell('Shrink Retail \$').getData()-cell23.crossDimCell('Throws \$').getData()).round(2)
+                
+               MonthValidationIssue_CalcCheck.add(cell23.getMemberName("Products")+'|'+cell23.getMemberName("Years")+'|'+cell23.getMemberName("Periods")+'|'+cell23.getMemberName("Seasons")+'|'+cell23.getMemberName("Channel")+'|'+cell23.getMemberName("Scenarios")+'|'+cell23.getMemberName("Versions")+'|'+'eCommerce Gross Profit \$'+'|'+CalculatedValue+'|'+cell23.crossDimCell('eCommerce Gross Profit \$').getData().round(2)+'|'+'Calculate value for Cost Gross Profit does not match with value in MFPPlan')
+               
+             }
+             }   
+        
+        
+        }
+       } 
+       
+       FlexibleDataGridDefinitionBuilder builder24 = cube.flexibleDataGridDefinitionBuilder()
+   
+    builder24.setPov(ActYear, ActMonth,'Actual', 'All Seasons', 'Final','Month')
+    builder24.addColumn('Total Sales Retail','Sales Retail','Receipts Cost','COGS','eCommerce Gross Profit \$','eCommerce Gross Profit %','Sales Cost','TTL Margin \$','Gross Margin \$','TTL Vendor \$','Store MF Inv. Cost','Store MF Inv. Cost BOP','Store MF Inv. Retail','Store MF Inv. Retail BOP','Store MF Inv. Retail YE Adj','Reserve \$','Freight \$','Shrink Retail \$','Throws \$')
+    builder24.addRow(NonCostProductlist,'1P','2P','eCommerce')
+    DataGridDefinition gridDefinition24 = builder24.build()
+    cube.loadGrid(gridDefinition24, false).withCloseable { grid24 ->
+		grid24.dataCellIterator().each { cell24 ->
+        
+           /*Compare Total Margin calculation with the Ecomm Gross Profit in MFPPlan*/
+            if(cell24.getMemberName("Metrics").contains('TTL Margin \$'))
+             {  
+                /*Compare Total Margin calculation with the Total Margin in MFPPlan*/
+               
+             if( ((cell24.crossDimCell('Sales Retail').getData()-cell24.crossDimCell('Sales Cost').getData()+cell24.crossDimCell('TTL Vendor \$').getData()) - cell24.getData()).round() != 0 )
+             {
+                issuelog+=1
+                CalculatedValue = (cell24.crossDimCell('Sales Retail').getData()-cell24.crossDimCell('Sales Cost').getData()+cell24.crossDimCell('TTL Vendor \$').getData()).round(2)
+                
+               MonthValidationIssue_CalcCheck.add(cell24.getMemberName("Products")+'|'+cell24.getMemberName("Years")+'|'+cell24.getMemberName("Periods")+'|'+cell24.getMemberName("Seasons")+'|'+cell24.getMemberName("Channel")+'|'+cell24.getMemberName("Scenarios")+'|'+cell24.getMemberName("Versions")+'|'+cell24.getMemberName("Metrics")+'|'+CalculatedValue+'|'+cell24.getData().round(2)+'|'+'Calculate value for Total Margin does not match with value in MFPPlan')
+               
+             }
+             /*Compare Ecomm Cost Gross Profit calculation with the Ecomm Cost Gross Profit in MFPPlan*/
+             
+             if( ((cell24.crossDimCell('Sales Retail').getData()-cell24.crossDimCell('Sales Cost').getData()+cell24.crossDimCell('TTL Vendor \$').getData()-cell24.crossDimCell('Reserve $').getData()-cell24.crossDimCell('Freight \$').getData()-cell24.crossDimCell('Shrink Retail \$').getData()-cell24.crossDimCell('Throws \$').getData()) - cell24.crossDimCell('eCommerce Gross Profit \$').getData()).round() != 0 )
+             {
+                issuelog+=1
+                CalculatedValue = (cell24.crossDimCell('Sales Retail').getData()-cell24.crossDimCell('Sales Cost').getData()+cell24.crossDimCell('TTL Vendor \$').getData()-cell24.crossDimCell('Reserve $').getData()-cell24.crossDimCell('Freight \$').getData()-cell24.crossDimCell('Shrink Retail \$').getData()-cell24.crossDimCell('Throws \$').getData()).round(2)
+                
+               MonthValidationIssue_CalcCheck.add(cell24.getMemberName("Products")+'|'+cell24.getMemberName("Years")+'|'+cell24.getMemberName("Periods")+'|'+cell24.getMemberName("Seasons")+'|'+cell24.getMemberName("Channel")+'|'+cell24.getMemberName("Scenarios")+'|'+cell24.getMemberName("Versions")+'|'+'eCommerce Gross Profit \$'+'|'+CalculatedValue+'|'+cell24.crossDimCell('eCommerce Gross Profit \$').getData().round(2)+'|'+'Calculate value for Cost Gross Profit does not match with value in MFPPlan')
+               
+             }
+             }   
+        
+        
+        }
+       }    
+
+csvWriter('MonthEnd_Validation_Report_WPvsACT.txt').withCloseable() { outputFileRows ->
+
+MonthValidationIssue_WPvsACT.each{inputrows ->
+
+       outputFileRows.writeNext(inputrows)
+       
+    }
+
+}
+
+csvWriter('MonthEnd_Validation_Report_MFPPlan_vs_MrchPrft.txt').withCloseable() { outputFileRows ->
+
+MonthValidationIssue_MFPPlanvsMrchPrft.each{inputrows ->
+
+       outputFileRows.writeNext(inputrows)
+       
+    }
+
+}
+
+csvWriter('MonthEnd_Validation_Report_1P2P_Ecomm.txt').withCloseable() { outputFileRows ->
+
+MonthValidationIssue_1p2pvsEcomm.each{inputrows ->
+
+       outputFileRows.writeNext(inputrows)
+       
+    }
+
+}
+
+csvWriter('MonthEnd_Validation_Report_CalcCheck.txt').withCloseable() { outputFileRows ->
+
+MonthValidationIssue_CalcCheck.each{inputrows ->
+
+       outputFileRows.writeNext(inputrows)
+       
+    }
+
+}
+
+def payload
+def filename = "MonthEnd_Validation_Report_DataFile.txt,MonthEnd_Validation_Report_WPvsACT.txt,MonthEnd_Validation_Report_MFPPlan_vs_MrchPrft.txt,MonthEnd_Validation_Report_1P2P_Ecomm.txt,MonthEnd_Validation_Report_CalcCheck.txt"
+
+if(issuelog > 0)
+{
+ payload = [
+
+ to	: "DHEERAJ.TADI@walmart.com;Hakaran.Singh@walmart.com;VIVEKKUMAR.MANIRAO@walmart.com;Rubina.Jetha@walmart.com",
+ subject	: "Month End Data Validation MFP 2.0",
+ body	: "The Monthly Data Validation process has been completed. There are some variances in the validation files attached. Please verify and take corrective action.",
+ parameters: [
+        attachments: filename // Must be inside 'parameters'
+    ]	
+] 
+
+}
+else
+{
+ payload = [
+
+ to	: "DHEERAJ.TADI@walmart.com;Hakaran.Singh@walmart.com;VIVEKKUMAR.MANIRAO@walmart.com;Rubina.Jetha@walmart.com",
+ subject	: "Month End Data Validation MFP 2.0",
+ body	: "The Monthly Data Validation process has been completed. There are no variances found in the validation.",
+ parameters: [
+        attachments: filename // Must be inside 'parameters'
+    ]	
+] 
+
+}
+
+HttpResponse<String> jsonResponse = operation.application.getConnection("restConnection").post('/interop/rest/v2/mails/send').header("Content-Type","application/json").body(json(payload)).asString();
+
+if (jsonResponse.status >= 200 && jsonResponse.status < 300) {
+    println("Email sent successfully. Job ID: " + jsonResponse.body)
+} else {
+    throwVetoException("Failed to send email: " + jsonResponse.statusText)
+}
+

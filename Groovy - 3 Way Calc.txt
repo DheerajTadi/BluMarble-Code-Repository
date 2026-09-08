@@ -1,0 +1,829 @@
+/** 
+ *	constructed for Fiscal level 3 way calculations
+ * 	Behaviour:
+ *		-> Currency Metrics Uses Grid Level Spread to Capture the Edited Months - Accurately Captured
+ *		-> Percentage Metrics don't spread the values across period. Need to be explicitly handled
+ *	    -> All Cells used in the calculation must present in the grid	
+ * 	Operational Function:
+ *		-> Operation.grid => 'Run Before Save'
+ *		-> No Custom Data Grid Definition Used
+ **/
+ 
+ 
+ 
+// @params - To compute the total time elapsed 
+def startTime = currentTimeMillis()
+
+// @params - To Store unique list of members to be processed 
+List<String> editMet = [] 
+List<String> lockMet = []
+List<String> lastYrEditMet = []
+
+
+// @Grid - Iterate through the edited & Locked cells
+operation.grid.dataCellIterator({DataCell cell -> cell.edited || cell.locked}).each { DataCell cell  ->
+	if (cell.isEdited()) {		    	
+       	editMet.add(cell.getAccountName())         
+    } else {    	    	
+    	lockMet.add(cell.getAccountName())    	
+    }       
+}
+
+//Fetching metrics if all columns are locked size() == 19 => No. of Columns
+//remove Duplicates from the edited Metrics & LockedMetrics
+def lockedElements = { curList ->
+    curList.findAll{a -> curList.findAll{b -> b == a}.size() == 22}.unique()
+}
+def expLockMet = lockedElements(lockMet)
+editMet.unique(); lockMet.unique();
+
+
+
+// Initialize 3 way calc combinations based on Edited & Locked Members
+//Template determines the metrics to be calculated 
+/* Start Template:MFP.MFPPlan.Groovy - 3WayCalc - Core Calculation*/
+if (editMet.size() > 0) {	
+	println "Edited Metrics :" + editMet
+    if (!expLockMet.isEmpty()){ 
+    	println "Locked Metrics :" + expLockMet 		        
+    } 
+    
+	List currDef = getDefaultMbrs()
+	String webForm = operation.grid.getSourceInfo()?.name
+    
+    //IMU %-Receipts Retail-Receipts Cost  	    
+	if (editMet.contains('Receipts IMU %') && !editMet.contains('Receipts Retail Target'))  { 
+		calcPerMetrics(confMem([ 'Receipts IMU %-TY', 'Receipts Retail Target-TY', 'Receipts Cost-TY'] ) , 'y*(1-x)')  // Only for Perc. Metrics 1st Metric(x) -> Edited, 2nd Metric(y) -> Locked, 3rd Metric -> Calculated  (z)     
+		calcPerMetricsTP (confMem( ['Receipts Retail Target-TY','Receipts Cost-TY','Receipts IMU %-TY'] ), '1-(y/x)')  // Only for Two Pass Calculations Metrics 1st Metric(x) -> Locked Metric, 2nd Metric(y) -> The one which calculated in the above step, 3rd Metric -> Calculated  (z)   
+	} else if (editMet.contains('Receipts Retail Target') && !editMet.contains('Receipts IMU %')) { 
+   		calcMetrics(confMem([ 'Receipts IMU %-TY', 'Receipts Retail Target-TY', 'Receipts Cost-TY']), 'y*(1-x)')   	   	
+    }
+    
+   	//Build/Burn- Net Sales Retail-Total MD $-Receipts Retail Target            
+    if(!webForm.contains("eComm")){
+    	if(editMet.contains('Store Initiated MD $') || editMet.contains('HO Promo MD $') || editMet.contains('HO Clearance MD $')  || editMet.contains('Throws $') ) {
+    		calcTotalMD(confMem(['Store Initiated MD $-TY','HO Promo MD $-TY','Total MD $-TY','HO Clearance MD $-TY','Throws $-TY']))
+    	}
+		if(editMet.contains('Receipts Retail Target') && !editMet.contains('Total MD $') && !editMet.contains('Sales Retail') ) {
+        	calcMetrics4Way(confMem([ 'Sales Retail-TY','Receipts Retail Target-TY', 'Build/Burn-TY', 'Total MD $-TY']), 'y/(x+z)') // Only for Currency(4 Way) -> 1st Metric(x) - Locked/untouched , 2nd Metric(y) -> Edited, 3rd Metric(z) -> Untouched, 4th Metric -> Edited
+   		} else if(editMet.contains('Sales Retail') && !editMet.contains('Total MD $')) {     		
+    		calcMetrics4Way(confMem([ 'Receipts Retail Target-TY','Sales Retail-TY', 'Build/Burn-TY', 'Total MD $-TY'] ), 'x/(y+z)')                		        	         
+    	} else if(editMet.contains('Build/Burn') && !editMet.contains('Sales Retail') && !editMet.contains('Total MD $') ) {
+   			calcPerMetrics4Way(confMem([ 'Build/Burn-TY','Sales Retail-TY', 'Receipts Retail Target-TY', 'Total MD $-TY']  ), 'x*(y+z)') 
+        	calcPerMetricsTP4Way(confMem([ 'Sales Retail-TY','Receipts Retail Target-TY', 'Build/Burn-TY', 'Total MD $-TY']  ), 'y/(x+z)')
+            calcMetrics(confMem([ 'Receipts IMU %-TY', 'Receipts Retail Target-TY', 'Receipts Cost-TY']), 'y*(1-x)') 
+            calcMetrics(confMem(['Receipts AUR-TY', 'Receipts Retail Target-TY', 'Receipts Units-TY']), 'y/x')
+            
+    	}
+	}else if(webForm.contains("eComm")){
+    	if(editMet.contains('Receipts Cost') && !editMet.contains('Sales Cost')) {
+    		calcMetrics(confMem([ 'Sales Cost-TY', 'Receipts Cost-TY', 'Build/Burn-TY']), 'y/x')  //-> 1st Metric(x) - Locked/untouched , 2nd Metric(y) -> Edited, 3rd Metric(z) - Calculated                
+    	} else if(editMet.contains('Sales Cost') && !editMet.contains('Receipts Cost')){    	
+        	calcMetrics(confMem(['Receipts Cost-TY', 'Sales Cost-TY', 'Build/Burn-TY']), 'x/y')                    
+    	} else if(editMet.contains('Build/Burn') && !editMet.contains('Receipts Retail Target') && !editMet.contains('Sales Cost')){    		          
+            calcPerMetrics(confMem([ 'Build/Burn-TY','Sales Cost-TY', 'Receipts Cost-TY']  ), 'y*x') 
+        	calcPerMetricsTP(confMem([ 'Sales Cost-TY','Receipts Cost-TY', 'Build/Burn-TY']  ), 'y/x')               
+    	}
+        
+		/*if(editMet.contains('Shrink Cost (CC%) %') && !editMet.contains('Shrink Cost (CC%) $')){
+    		calcPerMetrics(confMem(['Shrink Cost (CC%) %-TY','Total Sales Retail-TY', 'Shrink Cost (CC%) $-TY']), 'y*x')
+        	calcPerMetricsTP(confMem(['Total Sales Retail-TY','Shrink Cost (CC%) $-TY', 'Shrink Cost (CC%) %-TY']), 'y/x')    
+    	}*/		        
+    }
+    
+     //Sales AUR-Sales Retail-Sales Units	    
+ 	if(editMet.contains('Sales AUR') && !editMet.contains('Sales Retail')) {    	
+		calcPerMetrics(confMem([ 'Sales AUR-TY', 'Sales Retail-TY', 'Sales Units-TY'] ) , 'y/x')   
+		calcPerMetricsTP (confMem( ['Sales Retail-TY','Sales Units-TY','Sales AUR-TY'] ), 'x/y')  
+   	} else if(editMet.contains('Sales Retail') && !editMet.contains('Sales AUR')) {
+    	calcMetrics(confMem([ 'Sales AUR-TY', 'Sales Retail-TY', 'Sales Units-TY']  ), 'y/x')
+    }  
+    
+   //Receipts AUR-Receipts Retail Target-Receipts Units
+    if(editMet.contains('Receipts AUR') && !editMet.contains('Receipts Retail Target')) {
+		calcPerMetrics(confMem([ 'Receipts AUR-TY', 'Receipts Retail Target-TY', 'Receipts Units-TY'] ) , 'y/x')   
+		calcPerMetricsTP (confMem( ['Receipts Retail Target-TY','Receipts Units-TY','Receipts AUR-TY'] ), 'x/y')  
+    } else if(editMet.contains('Receipts Retail Target') && !editMet.contains('Receipts AUR')){    	
+        calcMetrics(confMem(['Receipts AUR-TY', 'Receipts Retail Target-TY', 'Receipts Units-TY']), 'y/x')                    
+    } else if(editMet.contains('Receipts Units') && !editMet.contains('Receipts Retail Target')){
+    	calcMetrics(confMem(['Receipts AUR-TY', 'Receipts Units-TY', 'Receipts Retail Target-TY']), 'y*x')                	                 
+    }
+    
+    //Sales Cost-Sales Cost AUC-Sales Units
+    if(editMet.contains('Sales Cost') && !editMet.contains('Sales Cost AUC')) {
+    	calcMetrics(confMem([ 'Sales Cost AUC-TY', 'Sales Cost-TY', 'Sales Units-TY']), 'y/x')         
+    }
+
+    
+   //Receipt Deals $-Receipt Deals %-Receipts Cost
+   	if(editMet.contains('Receipt Deals $') && !editMet.contains('Receipts Cost')) {
+    	calcMetrics(confMem([ 'Receipts Cost-TY', 'Receipt Deals $-TY', 'Receipt Deals %-TY']), 'y*x')    
+   	}else if(editMet.contains('Receipt Deals %') && !editMet.contains('Receipts Cost')) {
+    	calcMetrics(confMem([ 'Receipts Cost-TY', 'Receipt Deals %-TY', 'Receipt Deals $-TY']), 'y/x')    	   
+ 	}
+
+	//POS Deals $-POS Deals %-POSs Cost
+   	if(editMet.contains('POS Deals $') && !editMet.contains('Receipts Cost')) {
+    	calcMetrics(confMem([ 'Receipts Cost-TY', 'POS Deals $-TY', 'POS Deals %-TY']), 'y*x')    
+   	}else if(editMet.contains('POS Deals %') && !editMet.contains('POSs Cost')) {
+    	calcMetrics(confMem([ 'Receipts Cost-TY', 'POS Deals %-TY', 'POS Deals $-TY']), 'y/x')    	   
+    }  
+	
+    
+    
+    //Receipts AUC	Receipts Units	Receipts Cost
+    if(editMet.contains('Receipts Cost') && !editMet.contains('Receipts AUC')) {
+    	calcMetrics(confMem([ 'Receipts AUC-TY', 'Receipts Cost-TY','Receipts Units-TY']), 'y/x')       
+   	} else if (editMet.contains('Receipts AUC') && !editMet.contains('Receipts Cost')) {
+		calcPerMetrics(confMem(['Receipts AUC-TY', 'Receipts Cost-TY','Receipts Units-TY'] ) , 'y/x')   
+		calcPerMetricsTP (confMem( ['Receipts Cost-TY','Receipts Units-TY','Receipts AUC-TY'] ), 'x/y')
+    }
+         
+    //Commission Income	Commission Income % var LY	Commission Income LY
+    if(editMet.contains('Commission Income Var %') && !editMet.contains('Commission Income')){
+    	calcPerMetrics(confMem(['Commission Income Var %-VarPerLY','Commission Income-LY', 'Commission Income-TY']), ('(1+x)*y'))
+        calcPerMetricsTP(confMem(['Commission Income-LY','Commission Income-TY', 'Commission Income Var %-VarPerLY']), ('(y/x)-1'))
+	} else if(editMet.contains('Commission Income') && !editMet.contains('Commission Income Var %')){
+    	calcMetrics(confMem(['Commission Income-LY','Commission Income-TY', 'Commission Income Var %-VarPerLY']), ('(y/x)-1'))
+    }
+        //Service Income Retail Service Income Retail % var LY	Service Income Retail LY
+    if(editMet.contains('Service Income Retail Var %') && !editMet.contains('Service Income Retail')){
+    	calcPerMetrics(confMem(['Service Income Retail Var %-VarPerLY','Service Income Retail-LY', 'Service Income Retail-TY']), ('(1+x)*y'))
+        calcPerMetricsTP(confMem(['Service Income Retail-LY','Service Income Retail-TY', 'Service Income Retail Var %-VarPerLY']), ('(y/x)-1'))
+	} else if(editMet.contains('Service Income Retail') && !editMet.contains('Service Income Retail Var %')){
+    	calcMetrics(confMem(['Service Income Retail-LY','Service Income Retail-TY', 'Service Income Retail Var %-VarPerLY']), ('(y/x)-1'))
+            
+    }
+    //Net Sales Retail Net Sales Retail % var LY	Net Sales Retail LY
+    if(editMet.contains('Net Sales Retail Var %') && !editMet.contains('Sales Retail')){
+    	calcPerMetrics(confMem(['Net Sales Retail Var %-VarPerLY','Sales Retail-LY', 'Sales Retail-TY']), ('(1+x)*y'))
+        calcPerMetricsTP(confMem(['Sales Retail-LY','Sales Retail-TY', 'Net Sales Retail Var %-VarPerLY']), ('(y/x)-1'))
+        calcMetrics(confMem([ 'Sales AUR-TY', 'Sales Retail-TY', 'Sales Units-TY']  ), 'y/x')
+   
+	}else if(editMet.contains('Sales Retail') && !editMet.contains('Net Sales Retail Var %')){
+    	calcMetrics(confMem(['Sales Retail-LY','Sales Retail-TY', 'Net Sales Retail Var %-VarPerLY']), ('(y/x)-1'))
+    }
+    if (webForm.contains("eComm")) {
+    	if(editMet.contains('Gross Margin %') && !editMet.contains('Gross Margin $')){
+    		calcPerMetrics(confMem(['Gross Margin %-TY','Total Sales Retail-TY', 'Gross Margin $-TY']), 'y*x')
+        	calcPerMetricsTP(confMem(['Total Sales Retail-TY','Gross Margin $-TY', 'Gross Margin %-TY']), 'y/x)')    
+    	}
+    
+    } else {
+		if(editMet.contains('Gross Margin %') && !editMet.contains('Gross Margin $')){
+    		calcPerMetrics(confMem(['Gross Margin %-TY','Sales Retail-TY', 'Gross Margin $-TY']), 'y*(1-x)')
+        	calcPerMetricsTP(confMem(['Sales Retail-TY','Gross Margin $-TY', 'Gross Margin %-TY']), '1-(y/x)')    
+    	}
+	}
+    
+	if(editMet.contains('Supplier Agreement CM %') && !editMet.contains('Supplier Agreement CM $')){
+    	calcPerMetrics(confMem(['Supplier Agreement CM %-TY','Receipts Cost-TY', 'Supplier Agreement CM $-TY']), 'y*x')
+        calcPerMetricsTP(confMem(['Receipts Cost-TY','Supplier Agreement CM $-TY', 'Supplier Agreement CM %-TY']), 'y/x')    
+    }
+    
+   	if(editMet.contains('DNC %') && !editMet.contains('DNC $')){
+    	calcPerMetrics(confMem(['DNC %-TY','Sales Retail-TY', 'DNC $-TY']), 'y*x')
+        calcPerMetricsTP(confMem(['Sales Retail-TY','DNC $-TY', 'DNC %-TY']), 'y/x')    
+    }
+            
+} else {
+	println "No Metrics are edited!"
+}
+def calcTotalMD(List<String> calcMbrs) {
+	List<String> dim1 = [] 
+	List<String> dim2 = []
+	List<String> dim3 = []
+	List<String> dim4 = []
+	
+	calcMbrs.each { Mbrs ->
+    	dim1.add(Mbrs.split('-')[0]) ; dim2.add(Mbrs.split('-')[1]) ; dim3.add(Mbrs.split('-')[2]); dim4.add(Mbrs.split('-')[3]);
+    }
+                  
+    List<String> firstMemComb = [dim1[0],dim2[0],dim3[0],dim4[0]]
+    List<String> secondMemComb =[dim1[1],dim2[1],dim3[1],dim4[1]]
+    List<String> thirdMemComb = [dim1[2],dim2[2],dim3[2],dim4[2]]
+    List<String> fourthMemComb = [dim1[3],dim2[3],dim3[3],dim4[3]]
+    List<String> fifthMemComb = [dim1[4],dim2[4],dim3[4],dim4[4]]
+    
+	List<String> EditedDays=[]
+    operation.grid.dataCellIterator({DataCell cell -> cell.edited && (cell.getMemberNames().intersect(firstMemComb).size() == 4  || cell.getMemberNames().intersect(secondMemComb).size() == 4 || cell.getMemberNames().intersect(thirdMemComb).size() == 4 || cell.getMemberNames().intersect(fourthMemComb).size() == 4 || cell.getMemberNames().intersect(fifthMemComb).size() == 4 )}).each { cell -> 
+   		EditedDays.add(cell.getMemberName("Days"))
+    }
+    
+	operation.grid.dataCellIterator({DataCell cell -> cell.getMemberNames().intersect(firstMemComb).size() == 4  || cell.getMemberNames().intersect(secondMemComb).size() == 4 || cell.getMemberNames().intersect(thirdMemComb).size() == 4 || cell.getMemberNames().intersect(fourthMemComb).size() == 4 || cell.getMemberNames().intersect(fifthMemComb).size() == 4 }).each { cell ->    
+        if (cell.getMemberNames().intersect(thirdMemComb).size() == 4 && cell.getMemberName("Days") in EditedDays) {		        	
+    	    DataCell firstMemCell = cell.crossDimCell(dim1[0],dim2[0],dim3[0],dim4[0])
+        	DataCell secondMemCell = cell.crossDimCell(dim1[1],dim2[1],dim3[1],dim4[1]) 
+            DataCell fourthMemCell = cell.crossDimCell(dim1[3],dim2[3],dim3[3],dim4[3])
+            DataCell fifthMemCell = cell.crossDimCell(dim1[4],dim2[4],dim3[4],dim4[4])
+            	double firstMemData = firstMemCell.data
+	    	    double secondMemData = secondMemCell.data
+                double fourthMemData = fourthMemCell.data
+                double fifthMemData = fifthMemCell.data
+                	cell.setForceEditable(true)
+			        cell.data = firstMemData + secondMemData + fourthMemData + fifthMemData
+                    
+        
+        }		
+	}
+    println "${dim1[2]} Calculation Completed"
+    
+}
+/* End Template:MFP.MFPPlan.Groovy - 3WayCalc - Core Calculation*/
+
+
+
+println "Total Elapsed Time :" + {currentTimeMillis() - startTime}()
+
+//Templates used for Member Manipulation and Formula Calc
+/* Start Template:MFP.MFPPlan.Groovy - 3WayCalc - Core Functions*/
+// @Method - getDefaultMbrs- To define Current Scenario, Version, Year Dimensions
+// Members are hard-coded for now. <=> *To be Updated*
+List<String> getDefaultMbrs() {		
+	String webForm = operation.grid.getSourceInfo()?.name    
+	String currScenario = ""
+	String currVersion = ""
+	String currYear = ""	
+    if (webForm.endsWith("Budget")) {    	
+        currScenario = "Budget"
+    	currVersion = operation.application.getUserVariable("Version").getValue()	
+    	currYear = operation.application.getSubstitutionVariable("PlanYear").getValue()
+	} else if ( webForm.endsWith("WP")) {
+		currScenario = "WP"
+    	currVersion = operation.application.getUserVariable("Version").getValue()
+    	currYear = operation.application.getSubstitutionVariable("ActYr").getValue()
+	}	
+	List currentDefault = [currScenario, currVersion ,currYear]
+	return currentDefault
+}
+
+
+
+//@Method - forumulaCalc - calculate the data based on the formula type provided in 3Way Calc -> R.H.S.Max = 2 members
+//Returns - calculated double data type
+double formulaCalc (String formulaType,double x,double y) {
+	double formCalc
+	switch (formulaType) {
+    	case "y/x":
+	    	formCalc = y / x
+	    break;    
+    	
+        case "x/y":
+	    	formCalc = x / y
+	    break;  
+
+		case "y*x":
+    		formCalc = y * x
+	    break;        
+    
+	    case "y*(1-x)":
+    		formCalc = y * (1 - x)
+	    break;
+        
+    	case "y/(1-x)":
+    		formCalc = y / (1 - x)
+	    break;
+       	
+        case "1-(y/x)":
+			formCalc = 1 - (y/x)             
+        break;                
+        
+        case "(1+x)*y":
+        	formCalc = (1+x)*y 
+        break;
+
+		case "(y/x)-1":
+        	formCalc = (y/x)-1 
+        break;
+
+   		default :
+    		formCalc = 0
+		break
+    }
+    
+    if (formCalc.isNaN() || formCalc.isInfinite()) {
+    	formCalc = 0    	
+    }
+    return formCalc    
+}
+
+
+//@Method - forumulaCalc - calculate the data based on the formula type provided in 3Way Calc -> R.H.S.Max = 3 members
+//Returns - calculated double data type
+double formulaCalc4Way (String formulaType,double x,double y, double z) {
+	double formCalc
+	switch (formulaType) {
+    	case "y/(x+z)":
+	    	formCalc = y / (x + z)
+	    break;    
+		               
+		case "x/(y+z)":
+    		formCalc = x / (y + z)
+	    break;            	    
+        
+		case "x*(y+z)":
+    		formCalc = x * (y + z)
+	    break;          
+        
+   		default :
+    		formCalc = 0
+		break
+    } 
+    if (formCalc.isNaN() || formCalc.isInfinite()) {
+    	formCalc = 0    	
+    }
+    return formCalc    
+}
+
+
+
+//@Method - confMem - To fetch TY and LY Scenario, Version & Year Member combinations 
+//Returns Member combinations list concat by '-'
+//Note: Member names must not contain '-'
+List confMem(List<String> impactedMbrs) {
+    List<String> MbrConfig = []   
+    List<String> currDefault = getDefaultMbrs()    
+    String webForm = operation.grid.getSourceInfo()?.name
+    String seasonalityCheck=""
+    if(webForm.contains("Seasonality")){
+    	seasonalityCheck="yes"
+    }else{
+    	seasonalityCheck="no"
+    }
+     
+    impactedMbrs.each { 
+        if (it.toString().split('-')[1].equals('TY')) {
+            MbrConfig.add("${it.toString().split('-')[0]}-${currDefault[0]}-${currDefault[1]}-${currDefault[2]}".toString())    
+        } else if (it.toString().split('-')[1].equals('LY')&& currDefault[0]==("Budget")) {
+            MbrConfig.add("${it.toString().split('-')[0]}-LPRJ-Final-${"FY" + (currDefault[2].toString().drop(2).toInteger() - 1)}".toString())
+        } else if (it.toString().split('-')[1].equals('LY')&& currDefault[0]==("WP") && seasonalityCheck=="no") {
+            MbrConfig.add("${it.toString().split('-')[0]}-Actual-Final-${"FY" + (currDefault[2].toString().drop(2).toInteger() -1)}".toString())
+        } else if (it.toString().split('-')[1].equals('LY')&& currDefault[0]==("WP") && seasonalityCheck=="yes") {
+            MbrConfig.add("${it.toString().split('-')[0]}-Actual LY-Final-${"FY" + (currDefault[2].toString().drop(2).toInteger())}".toString())
+        } else if (it.toString().split('-')[1].equals('VarPerLY') && currDefault[0]==("Budget")) {
+        	MbrConfig.add("${it.toString().split('-')[0]}-Var % LY-${currDefault[1]}-${"FY" + (currDefault[2].toString().drop(2).toInteger() - 0)}".toString()) 
+        } else if (it.toString().split('-')[1].equals('VarPerLY') && currDefault[0]==("WP")) {
+        	MbrConfig.add("${it.toString().split('-')[0]}-Var % LY WP-${currDefault[1]}-${"FY" + (currDefault[2].toString().drop(2).toInteger() - 0)}".toString())
+		} else if (it.toString().split('-')[1].equals('SNY')) {
+        	MbrConfig.add("${it.toString().split('-')[0]}-${currDefault[0]}-${currDefault[1]}-${"FY" + (currDefault[2].toString().drop(2).toInteger() + 1)}".toString())             
+        } else if (it.toString().split('-')[1].equals('SLY')) {
+        	MbrConfig.add("${it.toString().split('-')[0]}-${currDefault[0]}-${currDefault[1]}-${currDefault[2]}".toString())
+		} else if (it.toString().split('-')[1].equals('VarPerSLY') && currDefault[0]==("WP") ) {
+        	MbrConfig.add("${it.toString().split('-')[0]}-Var % LY WP-${currDefault[1]}-${"FY" + (currDefault[2].toString().drop(2).toInteger() + 1)}".toString()) 
+		} else if (it.toString().split('-')[1].equals('VarPerSLY') && currDefault[0]==("Budget") ) {
+        	MbrConfig.add("${it.toString().split('-')[0]}-Var % LY-${currDefault[1]}-${"FY" + (currDefault[2].toString().drop(2).toInteger() + 1)}".toString())  
+		}            
+    }
+    println MbrConfig
+    return MbrConfig
+}
+/* End Template:MFP.MFPPlan.Groovy - 3WayCalc - Core Functions*/
+
+
+
+
+//@Method - calcPerMetrics - to calculate the percentage members
+//determine the periods to be calculated =<> System cannot identify the all % Metrics as grid spread doesnt work on % Metrics 
+//Time Balance Property has been set to CUSTOM 
+//Calcualte the periods of % Metrics
+//period parent level re-calculated for Two-Pass Accuracy
+//@params - dim1 -> [Metrics], dim2 -> [Scenario], dim3 -> [Version] , dim4[years]
+def calcPerMetrics(List<String> calcMbrs,String formulaType ) {
+	
+    List<String> dim1 = []
+	List<String> dim2 = []
+	List<String> dim3 = []
+	List<String> dim4 = []
+
+    
+	calcMbrs.each { Mbrs ->
+    	dim1.add(Mbrs.split('-')[0]) ; dim2.add(Mbrs.split('-')[1]) ; dim3.add(Mbrs.split('-')[2]); dim4.add(Mbrs.split('-')[3]);
+    }
+
+	List<String> firstMemComb = [dim1[0],dim2[0],dim3[0],dim4[0]]
+    List<String> secondMemComb =[dim1[1],dim2[1],dim3[1],dim4[1]]
+    List<String> thirdMemComb = [dim1[2],dim2[2],dim3[2],dim4[2]]
+	
+    println firstMemComb
+    println secondMemComb
+    println thirdMemComb
+    
+ 	Cube cube = operation.cube
+    Dimension periodDim = operation.application.getDimension("Periods", cube)
+    
+    List<String> periodLvl0Desc = ['Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec','Jan']
+    List<String> parentPeriods =  ["Q1",'Q2',"Q3","Q4","H1","H2","YearTotal"]
+    
+    println "\nCalculated Metric: ${dim1[2]} \n\tDependent Metric ${dim1[0]} , ${dim1[1]}"
+	operation.grid.dataCellIterator({DataCell cell -> cell.getMemberNames().intersect(firstMemComb).size() == 4  || cell.getMemberNames().intersect(secondMemComb).size() == 4 || cell.getMemberNames().intersect(thirdMemComb).size() == 4 }).each { cell ->	    
+	    if (cell.getMemberNames().intersect(thirdMemComb).size() == 4 ) {    		        
+			if (cell.getPeriodName() in periodLvl0Desc) {            	                	            	              
+                if (cell.crossDimCell(dim1[0],dim2[0],dim3[0],dim4[0]).isEdited()) {
+                	println "\tProcessing Edited Lev0 Period : $cell.periodName"
+            		def beforeModified = cell.data                            
+    	    		double firstMemData = cell.crossDimCell(dim1[0],dim2[0],dim3[0],dim4[0]).data        
+        			double secondMemData = cell.crossDimCell(dim1[1],dim2[1],dim3[1],dim4[1]).data			
+	        		cell.setForceEditable(true)
+                    cell.data = formulaCalc(formulaType, firstMemData, secondMemData)
+    				def afterModified = cell.data                        		                        		
+                    println "\t$cell.memberNames {Old Value : $beforeModified | New Value : $cell.data}" 
+            	}        
+	        		    	    
+        	}else if (cell.getPeriodName() in parentPeriods) {            	
+            	if(cell.crossDimCell(dim1[0],dim2[0],dim3[0],dim4[0]).isEdited()){
+                	println "\tProcessing Edited Parent : $cell.periodName"
+            		def beforeModified = cell.data                            
+    	    		double firstMemData = cell.crossDimCell(dim1[0],dim2[0],dim3[0],dim4[0]).data        
+        			double secondMemData = cell.crossDimCell(dim1[1],dim2[1],dim3[1],dim4[1]).data			
+                    cell.setForceEditable(true)
+	        		cell.data = formulaCalc(formulaType, firstMemData, secondMemData)
+    				def afterModified = cell.data                        		                        		
+                    println "\t$cell.memberNames {Old Value : $beforeModified | New Value : $cell.data}"                              	
+        			double tempLockedTotalSum = 0
+   	       			double tempAllSum = 0                
+					def periodDesc = periodDim.getEvaluatedMembers("Lvl0Descendants(${cell.getPeriodName()})",cube)            
+    				periodDesc.each { childPeriod ->
+						tempAllSum += cell.crossDimCell(childPeriod.toString()).data             	
+	                	if ((cell.crossDimCell(dim1[0],dim2[0],dim3[0],dim4[0],childPeriod.toString()).isLocked()) ) {
+			           		tempLockedTotalSum += cell.crossDimCell(childPeriod.toString()).data             	
+        	            } 
+            	    }           
+                
+                	periodDesc.each { childPeriod -> 
+   	            		if (!(cell.crossDimCell(dim1[0],dim2[0],dim3[0],dim4[0],childPeriod.toString()).isLocked())) {                    	 
+							if (tempAllSum > 0) {
+                            	def oldData = cell.crossDimCell(childPeriod.toString()).getData()                            	
+           	            		cell.crossDimCell(childPeriod.toString()).setForceEditable(true)
+                                double calc = cell.crossDimCell(childPeriod.toString()).data +  ( (afterModified -  beforeModified) * ( cell.crossDimCell(childPeriod.toString()).data / (beforeModified - tempLockedTotalSum ))) 
+                                if (calc.isNaN() || calc.isInfinite()) {
+                                	calc = 0
+								}                                    
+                                cell.crossDimCell(childPeriod.toString()).data = calc                                          	                                
+                                println "\t\t${cell.crossDimCell(childPeriod.toString()).memberNames} {Old Value : $oldData | New Value : ${cell.crossDimCell(childPeriod.toString()).data}}"                              	
+               	        	} else {                        
+                            	def oldData = cell.crossDimCell(childPeriod.toString()).getData()
+                                cell.crossDimCell(childPeriod.toString()).setForceEditable(true)                                
+                                double calc = afterModified / periodDim.getEvaluatedMembers("Lvl0Descendants(${cell.getPeriodName()})",cube).size()                                
+                                if (calc.isNaN() || calc.isInfinite()) {                                
+                   	    			calc = 0
+								}   
+                                cell.crossDimCell(childPeriod.toString()).data = calc 
+                                println "\t\t$cell.memberNames {Old Value : $oldData | New Value : ${cell.crossDimCell(childPeriod.toString()).data}}" 
+                       		}    
+               			}
+   					}
+				} else if(cell.crossDimCell(dim1[0],dim2[0],dim3[0],dim4[0]).isLocked()) {
+                	println "\tProcessing Locked Parent : $cell.periodName"
+                	double totalSumLocked = cell.data
+                   	double totalSumChange = 0
+                	double totalSumUnEdited = 0
+                   	double totalSumUsrEdited = 0
+					                    
+                   	def periodDesc = periodDim.getEvaluatedMembers("Lvl0Descendants(${cell.getPeriodName()})",cube)                       
+                   	periodDesc.each { childPeriod ->                    	
+                   		totalSumChange += cell.crossDimCell(childPeriod.toString()).data
+                   		if (!(cell.crossDimCell(dim1[0],dim2[0],dim3[0],dim4[0],childPeriod.toString()).isLocked()) && !(cell.crossDimCell(dim1[0],dim2[0],dim3[0],dim4[0],childPeriod.toString()).isEdited()) ) {
+                       		totalSumUnEdited += cell.crossDimCell(childPeriod.toString()).data                            
+                   		} else if (!(cell.crossDimCell(dim1[0],dim2[0],dim3[0],dim4[0],childPeriod.toString()).isReadOnly()) && (cell.crossDimCell(dim1[0],dim2[0],dim3[0],dim4[0],childPeriod.toString()).isEdited()) ) {
+                       		totalSumUsrEdited += cell.crossDimCell(childPeriod.toString()).data 	                        
+                       	} else if (cell.crossDimCell(dim1[0],dim2[0],dim3[0],dim4[0],childPeriod.toString()).isLocked())  {
+                        	totalSumLocked -= cell.crossDimCell(childPeriod.toString()).data
+                        }                      
+                        
+                   	}
+                	
+                    
+                   	periodDesc.each { childPeriod ->
+                   		if (!(cell.crossDimCell(dim1[0],dim2[0],dim3[0],dim4[0],childPeriod.toString()).isLocked()) && !(cell.crossDimCell(dim1[0],dim2[0],dim3[0],dim4[0],childPeriod.toString()).isEdited()) ) {
+                       		def oldData = cell.crossDimCell(childPeriod.toString()).getData()
+                       		cell.crossDimCell(childPeriod.toString()).setForceEditable(true)
+                            double calc = cell.crossDimCell(childPeriod.toString()).data + (totalSumLocked - (totalSumUnEdited + totalSumUsrEdited)) *  ( cell.crossDimCell(childPeriod.toString()).data / totalSumUnEdited )                            
+                            if (calc.isNaN() || calc.isInfinite()) {   
+                            	calc = 0
+							}                                                        
+                            cell.crossDimCell(childPeriod.toString()).data = calc
+							println "\t\t$cell.memberNames {Old Value : $oldData | New Value : ${cell.crossDimCell(childPeriod.toString()).data}}"                                                        
+							cell.crossDimCell(dim1[0],dim2[0],dim3[0],dim4[0],childPeriod.toString()).setLocked(true)                            
+                   		}                                                                                                                           
+                	}                    
+                }      
+			}	 		                
+                        
+		}
+	}
+        
+    
+    operation.grid.dataCellIterator({DataCell cell -> cell.getMemberNames().intersect(thirdMemComb).size() == 4 && (cell.getPeriodName() in parentPeriods) }).each { cell ->	    
+    	def periodDesc = periodDim.getEvaluatedMembers("Children(${cell.getPeriodName()})",cube)  
+        double periodSum = 0
+        periodDesc.collect { periodSum += cell.crossDimCell(it.toString()).data}            
+        if (periodSum != cell.data) {
+      		cell.setForceEditable(true)
+            cell.data = periodSum             
+		}		
+	}
+    println "${dim1[2]} Calculation Completed"        
+}
+
+
+//@Method - calcPerMetricsTP - to re-calculate the percentage members based on the Currency Metrics change
+//Calcualte all edited periods of % Metrics
+//@params - dim1 -> [Metrics], dim2 -> [Scenario], dim3 -> [Version] , dim4[years]
+def calcPerMetricsTP(List<String> calcMbrs, String formulaType) {
+	List<String> dim1 = []
+	List<String> dim2 = []
+	List<String> dim3 = []
+	List<String> dim4 = []
+        
+	
+	calcMbrs.each { Mbrs ->
+    	dim1.add(Mbrs.split('-')[0]) ; dim2.add(Mbrs.split('-')[1]) ; dim3.add(Mbrs.split('-')[2]); dim4.add(Mbrs.split('-')[3]);
+    }
+    
+    List<String> firstMemComb = [dim1[0],dim2[0],dim3[0],dim4[0]]
+    List<String> secondMemComb =[dim1[1],dim2[1],dim3[1],dim4[1]]
+    List<String> thirdMemComb = [dim1[2],dim2[2],dim3[2],dim4[2]]
+        
+	operation.grid.dataCellIterator({DataCell cell -> cell.getMemberNames().intersect(firstMemComb).size() == 4  || cell.getMemberNames().intersect(secondMemComb).size() == 4 || cell.getMemberNames().intersect(thirdMemComb).size() == 4  }).each { cell ->	    		
+        if (cell.getMemberNames().intersect(thirdMemComb).size() == 4 ) {		
+    	    DataCell firstMemCell = cell.crossDimCell(dim1[0],dim2[0],dim3[0],dim4[0])       
+        	DataCell secondMemCell = cell.crossDimCell(dim1[1],dim2[1],dim3[1],dim4[1])
+            if(secondMemCell.isEdited() ) {      
+            	double firstMemData = firstMemCell.data
+	    	    double secondMemData = secondMemCell.data
+                //if (secondMemCell.data > 0 && !secondMemCell.isMissing()) {      
+                	cell.setForceEditable(true)
+			        cell.data = formulaCalc(formulaType, firstMemData, secondMemData)		                    
+				//}                    
+        	}          
+        }		
+	}
+}
+
+
+//@Method - calcPerMetrics - to calculate the percentage members
+//determine the periods to be calculated =<> System cannot identify the all % Metrics as grid spread doesnt work on % Metrics 
+//Time Balance Property has been set to CUSTOM 
+//Calcualte the periods of % Metrics
+//period parent level re-calculated for Two-Pass Accuracy
+//@params - dim1 -> [Metrics], dim2 -> [Scenario], dim3 -> [Version] , dim4[years]
+def calcPerMetrics4Way(List<String> calcMbrs,String formulaType ) {
+	
+    List<String> dim1 = []
+	List<String> dim2 = []
+	List<String> dim3 = []
+	List<String> dim4 = []
+
+    
+	calcMbrs.each { Mbrs ->
+    	dim1.add(Mbrs.split('-')[0]) ; dim2.add(Mbrs.split('-')[1]) ; dim3.add(Mbrs.split('-')[2]); dim4.add(Mbrs.split('-')[3]);
+    }
+
+	List<String> firstMemComb = [dim1[0],dim2[0],dim3[0],dim4[0]]
+    List<String> secondMemComb =[dim1[1],dim2[1],dim3[1],dim4[1]]
+    List<String> thirdMemComb = [dim1[2],dim2[2],dim3[2],dim4[2]]
+    List<String> fourthMemComb = [dim1[3],dim2[3],dim3[3],dim4[3]]
+
+ 	Cube cube = operation.cube
+    Dimension periodDim = operation.application.getDimension("Periods", cube)
+    
+    List<String> periodLvl0Desc = ['Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec','Jan']
+    List<String> parentPeriods =  ["Q1",'Q2',"Q3","Q4","H1","H2","YearTotal"]
+    
+    println "\nCalculated Metric : ${dim1[2]} | Dependent Metric ${dim1[0]} , ${dim1[1]}"
+	operation.grid.dataCellIterator({DataCell cell -> cell.getMemberNames().intersect(firstMemComb).size() == 4  || cell.getMemberNames().intersect(secondMemComb).size() == 4 || cell.getMemberNames().intersect(thirdMemComb).size() == 4 || cell.getMemberNames().intersect(fourthMemComb).size() == 4 }).each { cell ->	    
+	    if (cell.getMemberNames().intersect(thirdMemComb).size() == 4 ) {    		        
+			if (cell.getPeriodName() in periodLvl0Desc) {            	                	            	              
+                if (cell.crossDimCell(dim1[0],dim2[0],dim3[0],dim4[0]).isEdited()) {
+                	println "\tProcessing Edited Lev0 Period : $cell.periodName"
+            		def beforeModified = cell.data                            
+    	    		double firstMemData = cell.crossDimCell(dim1[0],dim2[0],dim3[0],dim4[0]).data        
+        			double secondMemData = cell.crossDimCell(dim1[1],dim2[1],dim3[1],dim4[1]).data		
+                    double fourthMemData = cell.crossDimCell(dim1[3],dim2[3],dim3[3],dim4[3]).data		
+	        		cell.setForceEditable(true)
+                    cell.data = formulaCalc4Way(formulaType, firstMemData, secondMemData, fourthMemData)
+    				def afterModified = cell.data                        		                        		
+                    println "\t$cell.memberNames {Old Value : $beforeModified | New Value : $cell.data}" 
+            	}        
+	        		    	    
+        	}else if (cell.getPeriodName() in parentPeriods) {            	
+            	if(cell.crossDimCell(dim1[0],dim2[0],dim3[0],dim4[0]).isEdited()){
+                	println "\tProcessing Edited Parent : $cell.periodName"
+            		def beforeModified = cell.data                            
+    	    		double firstMemData = cell.crossDimCell(dim1[0],dim2[0],dim3[0],dim4[0]).data        
+        			double secondMemData = cell.crossDimCell(dim1[1],dim2[1],dim3[1],dim4[1]).data	
+                    double fourthMemData = cell.crossDimCell(dim1[3],dim2[3],dim3[3],dim4[3]).data	
+                    cell.setForceEditable(true)
+	        		cell.data = formulaCalc4Way(formulaType, firstMemData, secondMemData, fourthMemData)
+    				def afterModified = cell.data                        		                        		
+                    println "\t$cell.memberNames {Old Value : $beforeModified | New Value : $cell.data}"                              	
+        			double tempLockedTotalSum = 0
+   	       			double tempAllSum = 0                
+					def periodDesc = periodDim.getEvaluatedMembers("Lvl0Descendants(${cell.getPeriodName()})",cube)            
+    				periodDesc.each { childPeriod ->
+						tempAllSum += cell.crossDimCell(childPeriod.toString()).data             	
+	                	if ((cell.crossDimCell(dim1[0],dim2[0],dim3[0],dim4[0],childPeriod.toString()).isLocked()) ) {
+			           		tempLockedTotalSum += cell.crossDimCell(childPeriod.toString()).data             	
+        	            } 
+            	    }           
+                
+                	periodDesc.each { childPeriod -> 
+   	            		if (!(cell.crossDimCell(dim1[0],dim2[0],dim3[0],dim4[0],childPeriod.toString()).isLocked())) {                    	 
+							if (tempAllSum > 0) {
+                            	def oldData = cell.crossDimCell(childPeriod.toString()).getData()                            	
+           	            		cell.crossDimCell(childPeriod.toString()).setForceEditable(true)
+                                double calc=cell.crossDimCell(childPeriod.toString()).data +  ( (afterModified -  beforeModified) * ( cell.crossDimCell(childPeriod.toString()).data / (beforeModified - tempLockedTotalSum )))
+                                if(calc.isNaN()||calc.isInfinite()){
+                                calc=0
+                                }
+                                cell.crossDimCell(childPeriod.toString()).data =  calc                                        	                                
+                                println "\t\t$cell.memberNames {Old Value : $oldData | New Value : ${cell.crossDimCell(childPeriod.toString()).data}}"                              	
+               	        	} else {                        
+                            	def oldData = cell.crossDimCell(childPeriod.toString()).getData()
+                                cell.crossDimCell(childPeriod.toString()).setForceEditable(true)
+                   	    		//cell.crossDimCell(childPeriod.toString()).data =  afterModified / periodDim.getEvaluatedMembers("Lvl0Descendants(${cell.getPeriodName()})",cube).size() //commented for groovy upgrade - Vivek 9/2/25
+                                
+                                //Start :: Code change for groovy upgrade - Vivek
+                                cell.crossDimCell(childPeriod.toString()).data =  afterModified / periodDim.getEvaluatedMembers("Lvl0Descendants(${cell.getPeriodName()})",cube).size() as double
+                                //End :: Code change for groovy upgrade - Vivek
+                                
+                                println "\t\t$cell.memberNames {Old Value : $oldData | New Value : ${cell.crossDimCell(childPeriod.toString()).data}}" 
+                       		}    
+               			}
+   					}
+				} else if(cell.crossDimCell(dim1[0],dim2[0],dim3[0],dim4[0]).isLocked()) {
+                	println "\tProcessing Locked Parent : $cell.periodName"
+                	double totalSumLocked = cell.data
+                   	double totalSumChange = 0
+                	double totalSumUnEdited = 0
+                   	double totalSumUsrEdited = 0
+					                    
+                   	def periodDesc = periodDim.getEvaluatedMembers("Lvl0Descendants(${cell.getPeriodName()})",cube)                       
+                   	periodDesc.each { childPeriod ->                    	
+                   		totalSumChange += cell.crossDimCell(childPeriod.toString()).data
+                   		if (!(cell.crossDimCell(dim1[0],dim2[0],dim3[0],dim4[0],childPeriod.toString()).isLocked()) && !(cell.crossDimCell(dim1[0],dim2[0],dim3[0],dim4[0],childPeriod.toString()).isEdited()) ) {
+                       		totalSumUnEdited += cell.crossDimCell(childPeriod.toString()).data                            
+                   		} else if (!(cell.crossDimCell(dim1[0],dim2[0],dim3[0],dim4[0],childPeriod.toString()).isReadOnly()) && (cell.crossDimCell(dim1[0],dim2[0],dim3[0],dim4[0],childPeriod.toString()).isEdited()) ) {
+                       		totalSumUsrEdited += cell.crossDimCell(childPeriod.toString()).data 	                        
+                       	} else if (cell.crossDimCell(dim1[0],dim2[0],dim3[0],dim4[0],childPeriod.toString()).isLocked())  {
+                        	totalSumLocked -= cell.crossDimCell(childPeriod.toString()).data
+                        }                      
+                        
+                   	}
+                	
+                    
+                   	periodDesc.each { childPeriod ->
+                   		if (!(cell.crossDimCell(dim1[0],dim2[0],dim3[0],dim4[0],childPeriod.toString()).isLocked()) && !(cell.crossDimCell(dim1[0],dim2[0],dim3[0],dim4[0],childPeriod.toString()).isEdited()) ) {
+                       		def oldData = cell.crossDimCell(childPeriod.toString()).getData()
+                       		cell.crossDimCell(childPeriod.toString()).setForceEditable(true)
+                            double calc=cell.crossDimCell(childPeriod.toString()).data + (totalSumLocked - (totalSumUnEdited + totalSumUsrEdited)) *  ( cell.crossDimCell(childPeriod.toString()).data / totalSumUnEdited ) 
+                            if(calc.isNaN()||calc.isInfinite()){
+                            calc=0
+                            }
+                            cell.crossDimCell(childPeriod.toString()).data = calc                            
+							println "\t\t$cell.memberNames {Old Value : $oldData | New Value : ${cell.crossDimCell(childPeriod.toString()).data}}"                                                        
+							cell.crossDimCell(dim1[0],dim2[0],dim3[0],dim4[0],childPeriod.toString()).setLocked(true)                            
+                   		}                                                                                                                           
+                	}                    
+                }      
+			}	 		                
+                        
+		}
+	}
+        
+    
+    operation.grid.dataCellIterator({DataCell cell -> cell.getMemberNames().intersect(thirdMemComb).size() == 4 && (cell.getPeriodName() in parentPeriods) }).each { cell ->	    
+    	def periodDesc = periodDim.getEvaluatedMembers("Children(${cell.getPeriodName()})",cube)  
+        double periodSum = 0
+        periodDesc.collect { periodSum += cell.crossDimCell(it.toString()).data}            
+        if (periodSum != cell.data) {
+      		cell.setForceEditable(true)
+            cell.data = periodSum    
+		}		
+	}
+    println "${dim1[2]} Calculation Completed"        
+}
+
+
+//@Method - calcPerMetricsTP - to re-calculate the percentage members based on the Currency Metrics change
+//Calcualte all edited periods of % Metrics
+//@params - dim1 -> [Metrics], dim2 -> [Scenario], dim3 -> [Version] , dim4[years]
+def calcPerMetricsTP4Way(List<String> calcMbrs, String formulaType) {
+	List<String> dim1 = []
+	List<String> dim2 = []
+	List<String> dim3 = []
+	List<String> dim4 = []
+        
+	
+	calcMbrs.each { Mbrs ->
+    	dim1.add(Mbrs.split('-')[0]) ; dim2.add(Mbrs.split('-')[1]) ; dim3.add(Mbrs.split('-')[2]); dim4.add(Mbrs.split('-')[3]);
+    }
+    
+    List<String> firstMemComb = [dim1[0],dim2[0],dim3[0],dim4[0]]
+    List<String> secondMemComb =[dim1[1],dim2[1],dim3[1],dim4[1]]
+    List<String> thirdMemComb = [dim1[2],dim2[2],dim3[2],dim4[2]]
+    List<String> fourthMemComb = [dim1[3],dim2[3],dim3[3],dim4[3]]
+        
+	operation.grid.dataCellIterator({DataCell cell -> cell.getMemberNames().intersect(firstMemComb).size() == 4  || cell.getMemberNames().intersect(secondMemComb).size() == 4 || cell.getMemberNames().intersect(thirdMemComb).size() == 4 || cell.getMemberNames().intersect(fourthMemComb).size() == 4  }).each { cell ->	    		
+        if (cell.getMemberNames().intersect(thirdMemComb).size() == 4 ) {		
+    	    DataCell firstMemCell = cell.crossDimCell(dim1[0],dim2[0],dim3[0],dim4[0])       
+        	DataCell secondMemCell = cell.crossDimCell(dim1[1],dim2[1],dim3[1],dim4[1])
+            DataCell fourthMemCell = cell.crossDimCell(dim1[3],dim2[3],dim3[3],dim4[3])
+            if(secondMemCell.isEdited() ) {      
+            	double firstMemData = firstMemCell.data
+	    	    double secondMemData = secondMemCell.data
+                double fourthmemData = fourthMemCell.data
+              //  if (secondMemCell.data > 0 && !secondMemCell.isMissing()) {      
+                	cell.setForceEditable(true)
+			        cell.data = formulaCalc4Way(formulaType, firstMemData, secondMemData,fourthmemData )		                    
+		//		}                    
+        	}          
+        }		
+	}
+}
+
+
+
+
+//@Method - To calculated all the periods edited
+//For currency metrics, the system captures all the required members as dirty using grid spread
+//@params - dim1 -> [Metrics], dim2 -> [Scenario], dim3 -> [Version] , dim4[years]
+def calcMetrics(List<String> calcMbrs, String formulaType) {
+	List<String> dim1 = [] 
+	List<String> dim2 = []
+	List<String> dim3 = []
+	List<String> dim4 = []
+	
+	calcMbrs.each { Mbrs ->
+    	dim1.add(Mbrs.split('-')[0]) ; dim2.add(Mbrs.split('-')[1]) ; dim3.add(Mbrs.split('-')[2]); dim4.add(Mbrs.split('-')[3]);
+    }
+    //calcMetrics(confMem([ 'Receipts Retail-TY', 'Receipts AUR-TY', 'Receipts Units-TY']), 'x/y')  //-> 1st Metric(x) - Locked/untouched , 2nd Metric(y) -> Edited, 3rd Metric(z) - Calculated                
+    List<String> firstMemComb = [dim1[0],dim2[0],dim3[0],dim4[0]]
+    List<String> secondMemComb =[dim1[1],dim2[1],dim3[1],dim4[1]]
+    List<String> thirdMemComb = [dim1[2],dim2[2],dim3[2],dim4[2]]
+    
+    println "\nCalculated Metric: ${dim1[2]} \n\tDependent Metric ${dim1[0]} , ${dim1[1]}"
+	operation.grid.dataCellIterator({DataCell cell -> cell.getMemberNames().intersect(firstMemComb).size() == 4  || cell.getMemberNames().intersect(secondMemComb).size() == 4 || cell.getMemberNames().intersect(thirdMemComb).size() == 4  }).each { cell ->    
+        if (cell.getMemberNames().intersect(thirdMemComb).size() == 4 ) {		        	
+    	    DataCell firstMemCell = cell.crossDimCell(dim1[0],dim2[0],dim3[0],dim4[0])
+        	DataCell secondMemCell = cell.crossDimCell(dim1[1],dim2[1],dim3[1],dim4[1])
+            if(secondMemCell.isEdited() ) {      
+            	double firstMemData = firstMemCell.data
+	    	    double secondMemData = secondMemCell.data
+                //if (!secondMemCell.isMissing() && !secondMemCell.isMissing()) {
+                	cell.setForceEditable(true)
+                    def oldData = cell.data 
+			        cell.data = formulaCalc(formulaType, firstMemData, secondMemData)	
+                    println "$cell.memberNames {Old Value : $oldData | New Value : $cell.data}"
+				//}                    
+        	}          
+        }		
+	}
+    println "${dim1[2]} Calculation Completed"  
+}
+
+
+//@Method - To calculated all the periods edited
+//For currency metrics, the system captures all the required members as dirty using grid spread -> R.H.S.Max = 3 members
+//@params - dim1 -> [Metrics], dim2 -> [Scenario], dim3 -> [Version] , dim4[years]
+def calcMetrics4Way(List<String> calcMbrs, String formulaType) {
+	List<String> dim1 = [] 
+	List<String> dim2 = []
+	List<String> dim3 = []
+	List<String> dim4 = []
+    
+	
+	calcMbrs.each { Mbrs ->
+    	dim1.add(Mbrs.split('-')[0]) ; dim2.add(Mbrs.split('-')[1]) ; dim3.add(Mbrs.split('-')[2]); dim4.add(Mbrs.split('-')[3]);
+    }
+    
+    List<String> firstMemComb = [dim1[0],dim2[0],dim3[0],dim4[0]]
+    List<String> secondMemComb =[dim1[1],dim2[1],dim3[1],dim4[1]]
+    List<String> thirdMemComb = [dim1[2],dim2[2],dim3[2],dim4[2]]
+    List<String> fourthMemComb = [dim1[3],dim2[3],dim3[3],dim4[3]]
+    
+    println "\nCalculated Metric: ${dim1[2]} \n\tDependent Metric ${dim1[0]} , ${dim1[1]}"
+	operation.grid.dataCellIterator({DataCell cell -> cell.getMemberNames().intersect(firstMemComb).size() == 4  || cell.getMemberNames().intersect(secondMemComb).size() == 4 || cell.getMemberNames().intersect(thirdMemComb).size() == 4 || cell.getMemberNames().intersect(fourthMemComb).size() == 4  }).each { cell ->	    		
+        if (cell.getMemberNames().intersect(thirdMemComb).size() == 4 ) {		
+    	    DataCell firstMemCell = cell.crossDimCell(dim1[0],dim2[0],dim2[0],dim4[0])       
+        	DataCell secondMemCell = cell.crossDimCell(dim1[1],dim2[1],dim2[1],dim4[1])
+            DataCell fourthMemCell = cell.crossDimCell(dim1[3],dim2[3],dim2[3],dim4[3])
+            if(secondMemCell.isEdited() ) {      
+            	double firstMemData = firstMemCell.data
+	    	    double secondMemData = secondMemCell.data
+                double fourthMemData = fourthMemCell.data
+                //if (!secondMemCell.isMissing() && !secondMemCell.isMissing()) {
+                	cell.setForceEditable(true)
+                    def oldData = cell.data 
+			        cell.data = formulaCalc4Way(formulaType, firstMemData, secondMemData, fourthMemData) 		
+                    println "\t$cell.memberNames {Old Value : $oldData | New Value : $cell.data}"
+				//}                    
+        	}          
+        }		
+	}
+    println "${dim1[2]} Calculation Completed"  
+}
+
+
+
+

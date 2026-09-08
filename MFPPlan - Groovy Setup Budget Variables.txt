@@ -1,0 +1,52 @@
+def DatatoPrint = new ArrayList<String>()
+def VariableFileName = 'Variable_File.txt'
+
+
+
+DatatoPrint.add("CurrDay454"+'\t'+operation.Application.getSubstitutionVariableValue('CurrDay454').replaceAll('"',''))
+DatatoPrint.add("Rep_454CurrMonthFirstWeek"+'\t'+operation.Application.getSubstitutionVariableValue('Rep_454CurrMonthFirstWeek').replaceAll('"',''))
+DatatoPrint.add("Rep_LastWeek"+'\t'+operation.Application.getSubstitutionVariableValue('Rep_LastWeek').replaceAll('"',''))
+DatatoPrint.add("CurrWeek"+'\t'+operation.Application.getSubstitutionVariableValue('CurrWeek').replaceAll('"',''))
+DatatoPrint.add("ActiveWeek"+'\t'+operation.Application.getSubstitutionVariableValue('ActiveWeek').replaceAll('"',''))
+DatatoPrint.add("Rep_454CurrMonthLastWeek"+'\t'+operation.Application.getSubstitutionVariableValue('Rep_454CurrMonthLastWeek').replaceAll('"',''))
+DatatoPrint.add("FirstProjMonth"+'\t'+operation.Application.getSubstitutionVariableValue('FirstProjMonth'))
+DatatoPrint.add("CurrDay"+'\t'+operation.Application.getSubstitutionVariableValue('CurrDay'))
+DatatoPrint.add("Prior2PriorActYr"+'\t'+operation.Application.getSubstitutionVariableValue('Prior2PriorActYr'))
+DatatoPrint.add("PriorActYr"+'\t'+operation.Application.getSubstitutionVariableValue('PriorActYr'))
+DatatoPrint.add("ActYr"+'\t'+operation.Application.getSubstitutionVariableValue('ActYr'))
+DatatoPrint.add("PlanYear"+'\t'+operation.Application.getSubstitutionVariableValue('PlanYear'))
+DatatoPrint.add("NextPlanYear"+'\t'+operation.Application.getSubstitutionVariableValue('NextPlanYear'))
+DatatoPrint.add("LastActMonth"+'\t'+operation.Application.getSubstitutionVariableValue('LastActMonth'))
+DatatoPrint.add("LastProjMonth"+'\t'+operation.Application.getSubstitutionVariableValue('LastProjMonth'))
+DatatoPrint.add("CurrMonth"+'\t'+operation.Application.getSubstitutionVariableValue('CurrMonth'))
+DatatoPrint.add("Commit_Var"+'\t'+operation.Application.getSubstitutionVariableValue('Commit_Var'))
+
+csvIterator(VariableFileName,'\t').withCloseable() { rows ->
+
+ rows.eachWithIndex { row, idx ->
+ 
+ List<String> fileRecord = row.collect{it.toString().trim() } as List<String>
+ 
+ if(fileRecord[0].contains("Week") || fileRecord[0].contains("CurrDay454"))
+ {
+ operation.Application.setSubstitutionVariableValue(fileRecord[0],'"'+fileRecord[1]+'"')
+ }
+ else
+ {
+ operation.Application.setSubstitutionVariableValue(fileRecord[0],fileRecord[1])
+ }
+ 
+ }
+
+}
+
+
+csvWriter(VariableFileName).withCloseable() { outputFileRows ->
+
+DatatoPrint.each{inputrows ->
+
+       outputFileRows.writeNext(inputrows)
+    
+    }
+
+}
