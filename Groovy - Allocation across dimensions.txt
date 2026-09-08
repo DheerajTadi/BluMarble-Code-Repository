@@ -1,0 +1,390 @@
+/* RTPS:*/
+
+/**********************************************************************
+
+Description	:		Business Rule to Disaggrete data from higher level to lower level of products, seasons and Days
+
+Modification History
+    Party           Date                     Description
+--------------   -----------      ------------------------------------
+**********************************************************************/
+boolean ed = false
+boolean editedMember = false
+def editedMembers = new ArrayList<String>()
+Cube cube = operation.getCube()
+def fiscalTo454Day = { days ->
+    String convertedDay ="454_Day0"
+    DataGridDefinitionBuilder builder = cube.dataGridDefinitionBuilder()
+    builder.addPov(['Years', 'Scenarios', 'Seasons', 'Periods', 'Versions', 'Products', 'Channel'], [['&ActYr'], ['No Scenario'], ['No Season'], ['&CurrMonth'], ['No Version'], ['No Product'], ['No Channel']])
+    builder.addColumn(['Metrics'], [ ['WeekDay'] ])
+    //builder.addRow(['Days'], [ [days] ])  //commented for groovy upgrade - Vivek
+    //Start :: Code change for groovy upgrade - Vivek
+    builder.addRow(['Days'], [ [days] ] as List<List<String>>) 
+    //End :: Code change for groovy upgrade - Vivek    
+    DataGridDefinition gridDefinition = builder.build()
+    cube.loadGrid(gridDefinition, false).withCloseable { grid ->
+		grid.dataCellIterator().each {
+			int a = (int) it.data
+			convertedDay += a
+		}
+	}
+	return convertedDay
+}
+
+Dimension yearDim = operation.application.getDimension("Years", cube)
+Dimension periodDim = operation.application.getDimension("Periods", cube)
+Dimension dayDim = operation.application.getDimension("Days", cube)
+
+def monthlist = periodDim.getEvaluatedMembers("&CurrMonth", cube)
+def yearlist = yearDim.getEvaluatedMembers("&ActYr", cube)
+def daylist = dayDim.getEvaluatedMembers("&CurrDay", cube)
+String sCurrYear = yearlist.join(",")
+String sCurrMonth = monthlist.join(",")
+String sCurrDay = daylist.join(",")
+
+List monthArray = ["Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec","Jan"]
+List upperlevelArray=["Q1","Q2","Q3","Q4","H1","H2","YearTotal"]
+
+List dayArray = ["Day01","Day02","Day03","Day04","Day05","Day06","Day07","Day08","Day09","Day10","Day11","Day12","Day13","Day14","Day15","Day16","Day17","Day18","Day19","Day20","Day21","Day22","Day23","Day24","Day25","Day26","Day27","Day28","Day29","Day30","Day31"]
+
+String sNextMonth = ""
+String sNextDay = ""
+
+if(sCurrMonth.equals("Jan")){
+	sNextMonth = ""
+} else {
+	sNextMonth = monthArray.get(monthArray.indexOf(sCurrMonth)+1)
+}
+
+if(sCurrDay.equals("Day31")) {
+	sNextDay = ""
+} else {
+	sNextDay = dayArray.get(dayArray.indexOf(sCurrDay)+1)
+}
+
+
+Set<String> editedMbrs = []
+String scenarioMbr;
+String productMbr;
+String dayMbr;
+String yearMbr;
+String ChannelMbr;
+String versionMbr;
+String seasonMbr;
+String periodMbr;
+
+def webForm = operation.grid.getSourceInfo()
+
+operation.grid.dataCellIterator({DataCell cell -> cell.edited && !cell.getDataType().getDisplayName().equals("Percentage") && !cell.getMemberName("Versions").equals("Final")}, MemberNameType.ESSBASE_NAME).each { DataCell cell ->
+    ChannelMbr = cell.getMemberName("Channel")
+    ed = true
+}
+
+//Excluding the Receipts Retail Target and Receipts Retail from the below list. This is for HC #362 enhancement where the generic disagg should work for Receipts
+def excludedMetrics = ["Receipts Cost", "Import In-Transit Cost","Domestic In-Transit Cost","DC Inv. Cost","Store EOP PI Cost","Store EOP PI Retail Target","Store WOS Target","DC Inv. Retail Target","DC WOS Target","FC Inv. AUC","FC Inv. Cost","Store BOP Inv. Adj","Store EOP PI AUR"/*,"Receipts Retail Target","Receipts Retail"*/]
+def excludeContext = "generic disagg"
+
+
+if (ed){   
+if(ChannelMbr.contains("1P") || ChannelMbr.contains("2P")){
+	excludedMetrics = ["Import In-Transit Cost","Domestic In-Transit Cost","DC Inv. Cost","Store EOP PI Cost","Store EOP PI Retail Target","Store WOS Target","DC Inv. Retail Target","DC WOS Target","FC Inv. AUC","FC Inv. Cost","Store BOP Inv. Adj","Store EOP PI AUR"/*,"Receipts Retail Target","Receipts Retail"*/]
+    excludeContext = "eComm 1P/2P disagg" 
+}
+
+if(webForm.name.toString().contains("Cost Department")){
+	excludedMetrics = ["Import In-Transit Cost","Domestic In-Transit Cost","DC Inv. Cost","Store EOP PI Cost","Store EOP PI Retail Target","Store WOS Target","DC Inv. Retail Target","DC WOS Target","FC Inv. AUC","FC Inv. Cost","Store BOP Inv. Adj","Store EOP PI AUR"/*,"Receipts Retail Target","Receipts Retail"*/]
+  	excludeContext = "Cost Department disagg"
+}
+
+}
+
+println(excludeContext+" with excelude metrics list: "+excludedMetrics)
+
+//GET inventory metrics list
+/*def excludedMetrics = ["Receipts Cost", "Import In-Transit Cost","Domestic In-Transit Cost","DC Inv. Cost","Store EOP PI Cost","Store EOP PI Retail Target","Store WOS Target","DC Inv. Retail Target","DC WOS Target","FC Inv. AUC","FC Inv. Cost","Store BOP Inv. Adj","Store EOP PI AUR","Receipts Retail Target","Receipts Retail"]*/
+
+operation.grid.dataCellIterator({DataCell cell -> cell.edited && !cell.getDataType().getDisplayName().equals("Percentage") && !cell.getMemberName("Versions").equals("Final") && !excludedMetrics.contains(cell.accountName)}, MemberNameType.ESSBASE_NAME).each { DataCell cell ->
+    editedMbrs << cell.getMemberName("Metrics")
+    scenarioMbr = cell.getMemberName("Scenarios")
+    productMbr = cell.getMemberName("Products")
+    ChannelMbr = cell.getMemberName("Channel")
+    dayMbr = cell.getMemberName("Days")
+    yearMbr = cell.getMemberName("Years")
+    versionMbr = cell.getMemberName("Versions")
+    seasonMbr = cell.getMemberName("Seasons")
+    editedMember = true
+}
+
+
+String calcScript = " "
+calcScript += """
+SET AGGMISSG ON;
+"""
+if(editedMember){
+	if(scenarioMbr.equals("WP") && sCurrYear.equals(yearMbr) ) {
+		if(!sNextDay.isEmpty()) {
+			calcScript += """
+                          
+                          FIX ("${dayMbr}", "${ChannelMbr}", "${versionMbr}", "${yearMbr}", ${cscParams(editedMbrs)}, "${productMbr}", "${seasonMbr}", &CurrMonth)
+                              "Allocation" = @ALLOCATE("${scenarioMbr}",@RELATIVE("${seasonMbr}", 0), "${scenarioMbr}"->"Sales Retail",, SHARE);
+                          ENDFIX
+                          
+                          FIX ("${dayMbr}", "${ChannelMbr}", "${versionMbr}", "${yearMbr}", ${cscParams(editedMbrs)}, "${productMbr}", @RELATIVE("${seasonMbr}", 0), &CurrMonth)
+                              "Allocation" = @ALLOCATE("Allocation",@RELATIVE("${productMbr}", 0), "${scenarioMbr}"->"Sales Retail",, SHARE);
+                          ENDFIX
+                          
+                          FIX ("Allocation", "${dayMbr}", "${ChannelMbr}", "${versionMbr}", "${yearMbr}", ${cscParams(editedMbrs)}, &CurrMonth)
+                              FIX (@RELATIVE("${seasonMbr}", 0))
+                                  @IDESCENDANTS("${productMbr}");
+                              ENDFIX
+                              FIX (@IDESCENDANTS("${productMbr}"))
+                                  @IDESCENDANTS("All Seasons");
+                              ENDFIX
+                          ENDFIX
+                          FIX ("${dayMbr}", "${ChannelMbr}", "${versionMbr}", "${yearMbr}", ${cscParams(editedMbrs)}, &CurrMonth)
+                              FIX ("${productMbr}", "${seasonMbr}")
+                                  "Allocation" (
+                                      IF (("${productMbr}"->"All Seasons") == #Missing)
+                                          IF (@Lev("${productMbr}") == 0 AND @Lev("${seasonMbr}") == 0)
+                                              "Allocation" = #Missing;
+                                          ELSE
+                                              "Allocation" =  @ALLOCATE("${scenarioMbr}", @Relative("${seasonMbr}", 0), "${scenarioMbr}",, SPREAD, SKIPNONE);
+                                          ENDIF
+                                      ENDIF
+                                  )
+                              ENDFIX
+                              
+                               FIX ("${productMbr}", @Relative("${seasonMbr}",0))
+                                    "Allocation" (
+                              			IF (("${productMbr}"->"All Seasons") == #Missing)
+                                  			IF (@Lev("${productMbr}") == 0 AND @Lev("${seasonMbr}") == 0)
+                                      			"Allocation" = #Missing;
+                                  			ELSE
+                                      			"Allocation" = @ALLOCATE("Allocation",@RELATIVE("${productMbr}", 0),"${scenarioMbr}",, SPREAD, SKIPNONE);
+                                  			ENDIF
+                              			ENDIF
+                          				)
+                      			ENDFIX
+                              FIX (@IDESCENDANTS("${productMbr}"),@IDESCENDANTS("${seasonMbr}"))
+                                  DATACOPY "Allocation" To "${scenarioMbr}";
+                                  FIX ("Allocation")
+                                      CLEARBLOCK All;
+                                  ENDFIX
+                              ENDFIX
+                          ENDFIX
+                          FIX ("${ChannelMbr}", "${versionMbr}", "${yearMbr}", ${cscParams(editedMbrs)}, &CurrMonth, @RELATIVE("${productMbr}", 0), @RELATIVE("${seasonMbr}", 0))
+                              FIX ("Day01" : "${sCurrDay}")
+                                  DATACOPY "${scenarioMbr}" To "Allocation";
+                              ENDFIX
+                              FIX ("Allocation")
+                                  @IDESCENDANTS("${dayMbr}");
+                              ENDFIX
+                              FIX ("Day01" : "${sCurrDay}", "Allocation")
+                                  CLEARBLOCK All;
+                              ENDFIX
+                          ENDFIX
+                          FIX ("${dayMbr}", "${ChannelMbr}", "${versionMbr}", "${yearMbr}", ${cscParams(editedMbrs)}, &CurrMonth, @RELATIVE("${productMbr}", 0), @RELATIVE("${seasonMbr}", 0))
+                              "Allocation" = @ALLOCATE(("${scenarioMbr}" - "Allocation"), "${sNextDay}":"Day31", "${scenarioMbr}",, SHARE);
+                          ENDFIX
+                          FIX ("${dayMbr}", "${ChannelMbr}", "${versionMbr}", "${yearMbr}", ${cscParams(editedMbrs)}, &CurrMonth)
+                              FIX (@RELATIVE("${productMbr}", 0), @RELATIVE("${seasonMbr}", 0))
+                                  "Allocation" (
+                                      IF (@Sum(@Children("${dayMbr}")) == #Missing)
+                                          "Allocation" = @ALLOCATE(("${scenarioMbr}" - "Allocation"), "${sNextDay}":"Day31", "No Scenario"->"No Version"->"No Product"->"Fiscal CalDate"->"No Channel"->"No Season",, SPREAD, SKIPMISSING);
+                                      ENDIF
+                                  )
+                              ENDFIX
+                              FIX (@IDESCENDANTS("${productMbr}"),@IDESCENDANTS("${seasonMbr}"))
+                                  FIX ("${sNextDay}" : "Day31")
+                                      DATACOPY "Allocation" To "${scenarioMbr}";
+                                      FIX ("Allocation")
+                                          CLEARBLOCK All;
+                                      ENDFIX
+                                  ENDFIX
+                              ENDFIX
+                          ENDFIX
+                          
+                          FIX ("${ChannelMbr}", "${versionMbr}", "${yearMbr}", ${cscParams(editedMbrs)}, &CurrMonth)
+                                FIX ("${scenarioMbr}", @IDESCENDANTS("${productMbr}", 0), @IDESCENDANTS("${seasonMbr}"))
+                                    @IDESCENDANTS("${dayMbr}");
+                                ENDFIX
+                                FIX ("${scenarioMbr}", @IDESCENDANTS("${dayMbr}"), @IDESCENDANTS("${seasonMbr}"))
+                                    @IDESCENDANTS("${productMbr}");
+                                ENDFIX
+                                FIX ("${scenarioMbr}", @IDESCENDANTS("${dayMbr}"), @IDESCENDANTS("${productMbr}"))
+                                    @IDESCENDANTS("${seasonMbr}");
+                                ENDFIX
+                           ENDFIX
+			"""
+
+        }
+
+        if (!sCurrMonth.equals("Jan")) {
+               calcScript += """
+                            FIX ("${dayMbr}", "${ChannelMbr}", "${versionMbr}", "${yearMbr}", ${cscParams(editedMbrs)}, "${productMbr}", "${seasonMbr}", &FirstProjMonth : "Jan")
+                                "Allocation" = @ALLOCATE("${scenarioMbr}",@RELATIVE("${seasonMbr}", 0), "${scenarioMbr}"->"Sales Retail",, SHARE);
+                            ENDFIX
+                            FIX ("${dayMbr}", "${ChannelMbr}", "${versionMbr}", "${yearMbr}", ${cscParams(editedMbrs)}, "${productMbr}", @RELATIVE("${seasonMbr}", 0), &FirstProjMonth : "Jan")
+                                "Allocation" = @ALLOCATE("Allocation",@RELATIVE("${dayMbr}", 0), "${scenarioMbr}"->"Sales Retail",, SHARE);
+                            ENDFIX
+                            FIX (@RELATIVE("${dayMbr}", 0), "${ChannelMbr}", "${versionMbr}", "${yearMbr}", ${cscParams(editedMbrs)}, "${productMbr}", @RELATIVE("${seasonMbr}", 0), &FirstProjMonth : "Jan")
+                                "Allocation" = @ALLOCATE("Allocation",@RELATIVE("${productMbr}", 0),"${scenarioMbr}"->"Sales Retail",, SHARE);
+                            ENDFIX
+                            FIX ("${ChannelMbr}", "${versionMbr}", "${yearMbr}", ${cscParams(editedMbrs)}, &FirstProjMonth : "Jan")
+                                FIX ("Allocation", @RELATIVE("${productMbr}", 0), @RELATIVE("${seasonMbr}", 0))
+                                    @IDESCENDANTS("${dayMbr}");
+                                ENDFIX
+                                FIX ("Allocation", @IDESCENDANTS("${dayMbr}"), @RELATIVE("${seasonMbr}", 0))
+                                    @IDESCENDANTS("${productMbr}");
+                                ENDFIX
+                                FIX ("Allocation", @IDESCENDANTS("${dayMbr}"), @IDESCENDANTS("${productMbr}"))
+                                    @IDESCENDANTS("All Seasons");
+                                ENDFIX
+                            ENDFIX
+                            FIX ("${dayMbr}", "${ChannelMbr}", "${versionMbr}", "${yearMbr}", ${cscParams(editedMbrs)}, &FirstProjMonth : "Jan")
+                                FIX ("${productMbr}", "${seasonMbr}")
+                                    "Allocation" (
+                                        IF (("${productMbr}"->"All Seasons") == #Missing)
+                                            IF (@Lev("${productMbr}") == 0 AND @Lev("${seasonMbr}") == 0)
+                                                "Allocation" = #Missing;
+                                            ELSE
+                                                "Allocation" = @ALLOCATE("${scenarioMbr}",@RELATIVE("${seasonMbr}", 0), "${scenarioMbr}",, SPREAD, SKIPNONE);
+                                            ENDIF
+                                        ENDIF
+                                    )
+                                ENDFIX
+                                
+                                FIX ("${productMbr}", @RELATIVE("${seasonMbr}", 0))
+                                    "Allocation" (
+                                        IF (("${productMbr}"->"All Seasons") == #Missing)
+                                            IF (@Lev("${productMbr}") == 0 AND @Lev("${seasonMbr}") == 0)
+                                                "Allocation" = #Missing;
+                                            ELSE
+                                                "Allocation" = @ALLOCATE("Allocation",@RELATIVE("${productMbr}", 0),"${scenarioMbr}",, SPREAD, SKIPNONE);
+                                            ENDIF
+                                        ENDIF
+                                    )
+                                ENDFIX
+                                FIX (@RELATIVE("${productMbr}", 0), @RELATIVE("${seasonMbr}", 0))
+                                    "Allocation" (
+                                        IF (("${productMbr}"->"All Seasons" == #Missing))
+                                            IF (@Lev("${productMbr}") == 0 AND @Lev("${seasonMbr}") == 0)
+                                                "Allocation" = @ALLOCATE("${scenarioMbr}", @RELATIVE("${dayMbr}", 0), "No Scenario"->"No Version"->"No Product"->"Fiscal CalDate"->"No Channel"->"No Season",, SPREAD, SKIPMISSING);
+                                            ELSE
+                                                "Allocation" = @ALLOCATE("Allocation", @RELATIVE("${dayMbr}", 0), "No Scenario"->"No Version"->"No Product"->"Fiscal CalDate"->"No Channel"->"No Season",, SPREAD, SKIPMISSING);
+                                            ENDIF
+                                        ENDIF
+                                    )
+                                ENDFIX
+                            ENDFIX
+                            FIX ("${ChannelMbr}", "${versionMbr}", "${yearMbr}", ${cscParams(editedMbrs)}, &FirstProjMonth : "Jan")
+                                FIX ("Allocation", @IDESCENDANTS("${productMbr}", 0), @IDESCENDANTS("${seasonMbr}"))
+                                    @IDESCENDANTS("${dayMbr}");
+                                ENDFIX
+                                FIX ("Allocation", @IDESCENDANTS("${dayMbr}"), @IDESCENDANTS("${seasonMbr}"))
+                                    @IDESCENDANTS("${productMbr}");
+                                ENDFIX
+                                FIX ("Allocation", @IDESCENDANTS("${dayMbr}"), @IDESCENDANTS("${productMbr}"))
+                                    @IDESCENDANTS("${seasonMbr}");
+                                ENDFIX
+                            ENDFIX
+                            FIX (@IDESCENDANTS("${dayMbr}"), @IDESCENDANTS("${productMbr}"), @IDESCENDANTS("${seasonMbr}"), "${ChannelMbr}", "${versionMbr}", "${yearMbr}", ${cscParams(editedMbrs)}, &FirstProjMonth : "Jan")
+                                DATACOPY "Allocation" To "${scenarioMbr}";
+                                FIX ("Allocation")
+                                    CLEARBLOCK All;
+                                ENDFIX
+                            ENDFIX
+            """
+
+        }
+    } else {
+
+      calcScript += """             
+                  FIX(${cscParams(dayMbr,ChannelMbr,versionMbr,yearMbr, editedMbrs, productMbr,seasonMbr)} , @Relative("YearTotal",0))
+                      "Allocation" = @ALLOCATE("${scenarioMbr}", @Relative("${seasonMbr}", 0), "${scenarioMbr}"->"Sales Retail",, share);
+                  ENDFIX
+                  FIX(${cscParams(dayMbr,ChannelMbr,versionMbr,yearMbr, editedMbrs, productMbr)} ,@Relative("${seasonMbr}", 0),@Relative("YearTotal",0))
+                      "Allocation" = @ALLOCATE("Allocation", @RELATIVE("${dayMbr}", 0), "${scenarioMbr}"->"Sales Retail",, share);
+                  ENDFIX
+                  FIX(${cscParams(ChannelMbr,versionMbr,yearMbr, editedMbrs, productMbr)} ,@RELATIVE("${dayMbr}", 0),@Relative("${seasonMbr}", 0),@Relative("YearTotal",0))
+                      "Allocation" = @ALLOCATE("Allocation", @RELATIVE("${productMbr}", 0), "${scenarioMbr}"->"Sales Retail",, share);
+                  ENDFIX
+                  
+                  
+                  
+                  FIX(${cscParams(ChannelMbr,versionMbr,yearMbr, editedMbrs)},@Relative("YearTotal",0))
+                      FIX ("Allocation", @RELATIVE("${productMbr}", 0), @Relative("${seasonMbr}", 0))
+                          @IDescendants("${dayMbr}");
+                      ENDFIX
+                      FIX ("Allocation", @IDescendants("${dayMbr}"), @Relative("${seasonMbr}", 0))
+                          @IDescendants("${productMbr}");
+                      ENDFIX
+                      FIX ("Allocation", @IDescendants("${dayMbr}"), @IDescendants("${productMbr}"))
+                          @IDescendants("All Seasons");
+                      ENDFIX
+                  ENDFIX
+                  FIX(${cscParams(dayMbr, ChannelMbr,versionMbr,yearMbr, editedMbrs)},@Relative("YearTotal",0))
+                      FIX ("${productMbr}", "${seasonMbr}")
+                          "Allocation" (
+                              IF (("${productMbr}"->"All Seasons") == #Missing)
+                                  IF (@Lev("${productMbr}") == 0 AND @Lev("${seasonMbr}") == 0)
+                                      "Allocation" = #Missing;
+                                  ELSE
+                                      "Allocation" = @ALLOCATE("${scenarioMbr}", @Relative("${seasonMbr}", 0), "${scenarioMbr}",, SPREAD, SKIPNONE);
+                                  ENDIF
+                              ENDIF
+                          )
+                      ENDFIX
+                      
+                       FIX ("${productMbr}", @Relative("${seasonMbr}",0))
+                          "Allocation" (
+                              IF (("${productMbr}"->"All Seasons") == #Missing)
+                                  IF (@Lev("${productMbr}") == 0 AND @Lev("${seasonMbr}") == 0)
+                                      "Allocation" = #Missing;
+                                  ELSE
+                                      "Allocation" = @ALLOCATE("Allocation",@RELATIVE("${productMbr}", 0),"${scenarioMbr}",, SPREAD, SKIPNONE);
+                                  ENDIF
+                              ENDIF
+                          )
+                      ENDFIX
+                      
+                      
+                      FIX (@RELATIVE("${productMbr}", 0), @RELATIVE("${seasonMbr}", 0))
+                          "Allocation" (
+                              IF (("${productMbr}"->"All Seasons" == #Missing))
+                                  IF (@Lev("${productMbr}") == 0 AND @Lev("${seasonMbr}") == 0)
+                                      "Allocation" = @ALLOCATE("${scenarioMbr}", @RELATIVE("${dayMbr}", 0), "No Scenario"->"No Version"->"No Product"->"Fiscal CalDate"->"No Channel"->"No Season",, SPREAD, SKIPMISSING);
+                                  ELSE
+                                      "Allocation" = @ALLOCATE("Allocation", @RELATIVE("${dayMbr}", 0), "No Scenario"->"No Version"->"No Product"->"Fiscal CalDate"->"No Channel"->"No Season",, SPREAD, SKIPMISSING);
+                                  ENDIF
+                              ENDIF
+                          )
+                      ENDFIX
+                  ENDFIX
+                  FIX(${cscParams(ChannelMbr,versionMbr,yearMbr, editedMbrs)},@Relative("YearTotal",0))
+                      FIX ("Allocation", @Idescendants("${productMbr}", 0), @IDescendants("${seasonMbr}"))
+                          @IDescendants("${dayMbr}");
+                      ENDFIX
+                      FIX ("Allocation", @IDescendants("${dayMbr}"), @Idescendants("${seasonMbr}"))
+                          @IDescendants("${productMbr}");
+                      ENDFIX
+                      FIX ("Allocation", @IDescendants("${dayMbr}"), @IDescendants("${productMbr}"))
+                          @IDescendants("${seasonMbr}");
+                      ENDFIX
+                  ENDFIX
+                  FIX(@IDescendants("${dayMbr}"), @IDescendants("${productMbr}"), @IDescendants("${seasonMbr}"), ${cscParams(ChannelMbr,versionMbr,yearMbr, editedMbrs)},@Relative("YearTotal",0))
+                      Datacopy "Allocation" To "${scenarioMbr}";
+                      FIX ("Allocation")
+                          Clearblock All;
+                      ENDFIX
+                  ENDFIX
+		"""
+	}
+
+}
+
+String finalScript
+finalScript = calcScript
+
+println finalScript
+return finalScript.toString()
